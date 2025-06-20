@@ -353,7 +353,7 @@ app.get('/chat', (req, res) => {
 
 // Define the database path
 // const dbPath = path.join(__dirname, 'database', 'primavera_p6.db'); // Old relative path
-const dbPath = 'C:/Users/kvsha/Desktop/New folder (3)/mydata.db'; // Updated to use your new database with views
+const dbPath = './database/mydata.db'; // Database file in repository
 
 // Ensure the directory exists (optional, but good practice)
 const dbDir = path.dirname(dbPath);
