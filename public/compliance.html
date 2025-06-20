@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compliance - Tool Name</title> <!-- Changed Title -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="dashboard.css"> <!-- Assuming shared dashboard styles -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- Add any page-specific CSS here -->
+    <style>
+        .regex-fail {
+            background-color: rgba(255, 0, 0, 0.1); /* Light red background */
+        }
+        .regex-fail td:first-child::before {
+            content: '\f057'; /* FontAwesome times icon */
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            color: red;
+            margin-right: 8px;
+        }
+        .regex-pass {
+            background-color: rgba(0, 255, 0, 0.08); /* Light green background */
+        }
+         .regex-pass td:first-child::before {
+            content: '\f058'; /* FontAwesome check-circle icon */
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            color: green;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+    <div class="flex h-screen bg-gray-100">
+        <!-- Sidebar -->
+        <div class="bg-blue-900 text-white w-64 px-6 py-8 overflow-y-auto flex flex-col">
+            <div class="flex items-center mb-8">
+                <i class="fas fa-building mr-2 text-2xl"></i>
+                <span class="text-xl font-bold">NIRMAN</span>
+            </div>
+
+            <nav class="flex-grow">
+                <p class="text-gray-400 text-xs uppercase tracking-wider mb-4">Main Navigation</p>
+                <a href="dashboard.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
+                </a>
+                <a href="compliance.html" class="block py-2 px-4 rounded bg-blue-800 text-white mb-2">
+                    <i class="fas fa-shield-alt mr-2"></i> Compliance
+                </a>
+                <a href="3d-model.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-cube mr-2"></i> 3D Model
+                </a>
+                <a href="schedule.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 whitespace-nowrap">
+                    <i class="fas fa-calendar mr-2"></i> Schedule Analytics
+                </a>
+                <a href="Table.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-table mr-2"></i> All Tables
+                </a>
+                <a href="version-history.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-history mr-2"></i> Version History
+                </a>
+                <a href="upload.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-upload mr-2"></i> Insert to DB
+                </a>
+                <a href="Chat.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-comments mr-2"></i> Chat
+                </a>
+                <a href="settings.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-cog mr-2"></i> Settings
+                </a>
+            </nav>
+
+            <div class="mt-auto pt-8">
+                <a href="index.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white">
+                    <i class="fas fa-sign-out-alt mr-2"></i> Log Out
+                </a>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="flex-1 overflow-x-hidden overflow-y-auto">
+            <!-- Top Navigation -->
+            <header class="bg-white shadow-sm">
+                <div class="flex items-center justify-between px-6 py-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-800">Compliance Dashboard</h1> <!-- Page specific title -->
+                        <p class="text-sm text-gray-600">Manage compliance requirements</p>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="text-sm text-gray-600 mr-4">
+                            <span class="font-medium">Project ID:</span> <span id="currentProjectId">P1000</span> <!-- Needs JS update -->
+                        </div>
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold mr-2">
+                                US
+                            </div>
+                            <span class="text-gray-800">User</span>
+                        </div>
+                    </div>
+                </div>
+                 <!-- Project Filter - Assuming it's needed here too -->
+                <div class="border-t border-gray-200 px-6 py-3 bg-gray-50 project-filter-container">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <label for="projectFilter" class="text-sm font-medium text-gray-700 mr-2">Project:</label>
+                            <select id="projectFilter" class="px-4 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="datacenter">DataCenter Project</option>
+                                <!-- Add JS to populate/update -->
+                            </select>
+                            <button id="refreshProjectBtn" class="ml-2 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm">
+                                <i class="fas fa-sync-alt mr-1"></i> Load
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Dashboard Content -->
+            <main class="p-6">
+                <h2 class="text-xl font-semibold mb-4">Compliance Activity Overview</h2>
+                
+                <!-- Regex Validation Section -->
+                <div class="bg-white rounded-lg shadow p-4 mb-6">
+                    <h3 class="text-lg font-semibold text-gray-800 mb-3">Activity Code Validation</h3>
+                    <div class="flex flex-wrap items-end gap-4 mb-4">
+                         <!-- Constrained width input -->
+                        <div class="flex-grow sm:flex-grow-0 sm:w-72">
+                            <label for="regexInput" class="block text-sm font-medium text-gray-700 mb-1">Enter Example Activity Code Pattern:</label>
+                            <input type="text" id="regexInput" placeholder="e.g., ACT-123" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                         <!-- Button with padding -->
+                        <div>
+                            <button id="validateRegexBtn" class="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
+                                <i class="fas fa-check-double mr-1"></i> Validate
+                            </button>
+                            <!-- Added Validate AWP Button -->
+                            <button id="validateAWPButton" class="ml-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                                <i class="fas fa-tasks mr-1"></i> Validate AWP
+                            </button>
+                            <button id="exportDataButton" class="ml-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 hidden">
+                                <i class="fas fa-download mr-1"></i> Export Data
+                            </button>
+                        </div>
+                    </div>
+                    <p id="regexErrorMsg" class="text-red-600 text-sm mb-4 hidden"></p>
+                    
+                    <!-- Added Pass/Fail Count Cards (Initially Hidden) -->
+                    <div id="validationCounts" class="grid grid-cols-1 sm:grid-cols-2 gap-4 hidden">
+                        <div id="passCountCard" class="bg-green-100 border border-green-300 rounded-lg p-3 text-center">
+                            <p class="text-sm font-medium text-green-800">Passed Validation</p>
+                            <p class="text-2xl font-bold text-green-900" id="passCount">0</p>
+                        </div>
+                        <div id="failCountCard" class="bg-red-100 border border-red-300 rounded-lg p-3 text-center">
+                            <p class="text-sm font-medium text-red-800">Failed Validation</p>
+                            <p class="text-2xl font-bold text-red-900" id="failCount">0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Activity Table -->
+                <div class="bg-white rounded-lg shadow mb-6">
+                    <div class="border-b border-gray-200 px-6 py-4 flex flex-wrap justify-between items-center gap-4">
+                        <h3 class="text-lg font-semibold text-gray-800">Activities by WBS</h3>
+                        <div class="flex flex-wrap items-center gap-2">
+                             <!-- Status Filter -->
+                            <select id="statusFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="all">All Statuses</option>
+                                <option value="TK_NotStart">Not Started</option>
+                                <option value="TK_Active">In Progress</option>
+                                <option value="TK_Complete">Completed</option>
+                                <!-- Add other common statuses if known, or load dynamically -->
+                            </select>
+                            <!-- Added Area Filter -->
+                            <select id="areaFilter" class="ml-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">All Areas</option>
+                                <!-- Options populated by JS -->
+                            </select>
+                            <!-- Added DivMS Filter -->
+                            <select id="divmsFilter" class="ml-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">All Milestones</option>
+                                <!-- Options populated by JS -->
+                            </select>
+                            <!-- Added Discipline Filter -->
+                            <select id="disciplineFilter" class="ml-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">All Disciplines</option>
+                                <!-- Options populated by JS -->
+                            </select>
+                             <!-- Validation Filter -->
+                            <select id="validationFilter" class="ml-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="all">All Validation</option>
+                                <option value="pass">Passed</option>
+                                <option value="fail">Failed</option>
+                                <option value="not_validated">Not Validated</option>
+                            </select>
+                             <!-- Search Input -->
+                            <input type="text" placeholder="Activity Code/Name..." id="complianceSearchInput" class="px-3 py-2 border border-gray-300 rounded-lg text-sm w-40">
+                             <!-- Filter Button (optional, filtering happens on change) -->
+                            <button id="complianceFilterBtn" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm">
+                                <i class="fas fa-filter mr-1"></i> Apply
+                            </button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table id="activityTable" class="min-w-full"> <!-- Changed from tasksTable to activityTable -->
+                            <thead>
+                                <tr class="bg-gray-50 border-b border-gray-200">
+                                    <th class="px-4 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Activity Code</th>
+                                    <th class="px-4 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Activity Name</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Suggested Code</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Project</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Area</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">DivMS</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">CWB</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">AreaCode</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Floor</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Discipline</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Block</th>
+                                    <th class="px-2 py-2 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">Hierarchy Path</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200 text-xs" id="activityTableBody"> <!-- Changed from tasksTableBody to activityTableBody -->
+                                <tr>
+                                     <!-- Updated colspan for new header -->
+                                     <td colspan="12" class="px-6 py-4 text-center text-gray-500">
+                                        Loading activity data...
+                                     </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="border-t border-gray-200 px-6 py-4">
+                         <div class="flex items-center justify-between">
+                            <div class="text-sm text-gray-600">
+                                Showing <span class="font-semibold" id="complianceItemsShowing">0</span> of <span class="font-semibold" id="complianceTotalItems">0</span> activities
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Link to Compliance specific JS -->
+    <script src="compliance.js"></script>
+    <!-- 
+        TODO in compliance.js:
+        1. Define/include: getProjectName, getAWPLevel1-6, AWP_LEVEL1-6_MAPPING, processTaskCode
+        2. Define initialData source (how is table data loaded currently?)
+        3. Implement renderTable() function:
+            - Clears #tasksTableBody
+            - Gets filter values (#statusFilter, #areaFilter, #divmsFilter, #disciplineFilter, #validationFilter, #complianceSearchInput)
+            - Filters currentTableData based on all filters
+            - Slices to top 100 records
+            - Populates #tasksTableBody with rows based on filtered/sliced data (using new columns)
+            - Updates item counts (#complianceItemsShowing, #complianceTotalItems)
+            - Optionally calls populateFilterOptions()
+        4. Implement validateAWPHandler():
+            - Maps initialData using processTaskCode to create/update currentTableData with AWP fields
+            - Calls renderTable()
+        5. Implement populateFilterOptions() (optional):
+            - Gets unique values for Area, DivMS, Discipline from currentTableData
+            - Populates #areaFilter, #divmsFilter, #disciplineFilter dropdowns
+        6. Add Event Listeners within DOMContentLoaded:
+            - Click listener for #validateAWPButton -> calls validateAWPHandler
+            - Change listeners for #statusFilter, #areaFilter, #divmsFilter, #disciplineFilter, #validationFilter -> calls renderTable
+            - Input listener for #complianceSearchInput -> calls renderTable
+            - Click listener for #complianceFilterBtn (if kept) -> calls renderTable
+            - Ensure initial renderTable() call happens
+    -->
+    
+</body>
+</html> 

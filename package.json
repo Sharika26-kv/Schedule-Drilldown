@@ -1,0 +1,45 @@
+{
+  "name": "bim-xer-masher",
+  "version": "1.0.0",
+  "description": "A web application for integrating BIM IFC files with project schedule XER files.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "npm run build && node server.js",
+    "build": "webpack --mode production",
+    "dev": "webpack serve --mode development --open --port 3000",
+    "server": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "bim",
+    "xer",
+    "ifc",
+    "primavera",
+    "construction",
+    "schedule",
+    "integration"
+  ],
+  "author": "",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@babel/core": "^7.0.0",
+    "@babel/preset-env": "^7.0.0",
+    "@babel/preset-react": "^7.26.3",
+    "babel-loader": "^8.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "serve": "^14.0.0",
+    "webpack": "^5.99.7",
+    "webpack-cli": "^4.10.0",
+    "webpack-dev-server": "^4.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.8.4",
+    "dotenv": "^16.5.0",
+    "express": "^4.19.2",
+    "forge-apis": "^0.9.10",
+    "form-data": "^4.0.2",
+    "multer": "^1.4.5-lts.2",
+    "sqlite3": "^5.1.7"
+  }
+}

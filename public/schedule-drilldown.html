@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Drilldown - NIRMAN</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans leading-normal tracking-normal schedule-drilldown-compact">
+    <div class="flex h-screen bg-gray-100">
+        <!-- Sidebar -->
+        <div class="bg-blue-900 text-white w-64 px-6 py-8 overflow-y-auto flex flex-col">
+            <div class="flex items-center mb-8">
+                <i class="fas fa-building mr-2 text-2xl"></i>
+                <span class="text-xl font-bold">NIRMAN</span>
+            </div>
+            
+            <nav class="flex-grow">
+                <p class="text-gray-400 text-xs uppercase tracking-wider mb-4">Main Navigation</p>
+                <a href="dashboard.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
+                </a>
+                <a href="compliance.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-shield-alt mr-2"></i> Compliance
+                </a>
+                <a href="3d-model.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-cube mr-2"></i> 3D Model
+                </a>
+                <a href="schedule.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 whitespace-nowrap">
+                    <i class="fas fa-calendar mr-2"></i> Schedule Analytics
+                </a>
+                <a href="schedule-drilldown.html" class="block py-2 px-4 rounded bg-blue-800 text-white mb-2 whitespace-nowrap">
+                    <i class="fas fa-search-plus mr-2"></i> Schedule Drilldown
+                </a>
+                <a href="Table.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-table mr-2"></i> All Tables
+                </a>
+                <a href="version-history.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-history mr-2"></i> Version History
+                </a>
+                <a href="upload.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-upload mr-2"></i> Insert to DB
+                </a>
+                <a href="Chat.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-comments mr-2"></i> Chat
+                </a>
+                <a href="settings.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2">
+                    <i class="fas fa-cog mr-2"></i> Settings
+                </a>
+            </nav>
+            
+            <div class="mt-auto pt-8">
+                <a href="index.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white">
+                    <i class="fas fa-sign-out-alt mr-2"></i> Log Out
+                </a>
+            </div>
+        </div>
+        
+        <!-- Main Content -->
+        <div class="flex-1 overflow-x-hidden overflow-y-auto">
+            <!-- Top Navigation -->
+            <header class="bg-white shadow-sm">
+                <div class="flex items-center justify-between px-6 py-4">
+                    <div>
+                        <h1 class="text-2xl font-bold text-gray-800">Schedule Drilldown</h1>
+                        <p class="text-sm text-gray-600">Detailed schedule metrics and analytics</p>
+                    </div>
+                    <div class="flex items-center">
+                        <!-- Export Buttons -->
+                        <div class="flex items-center space-x-2 mr-6">
+                            <button id="exportPdf" class="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors duration-200">
+                                <i class="fas fa-file-pdf mr-1"></i> PDF
+                            </button>
+                            <button id="exportExcel" class="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors duration-200">
+                                <i class="fas fa-file-excel mr-1"></i> Excel
+                            </button>
+                            <button id="exportImage" class="border border-gray-300 text-gray-700 px-3 py-2 rounded-lg text-sm hover:bg-gray-50 transition-colors duration-200">
+                                <i class="fas fa-image mr-1"></i> Image
+                            </button>
+                        </div>
+                        
+                        <div class="text-sm text-gray-600 mr-4">
+                            <span class="font-medium">Last Updated:</span> <span id="lastUpdated">Loading...</span>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold mr-2">
+                                US
+                            </div>
+                            <span class="text-gray-800">User</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Project Filter -->
+                <div class="border-t border-gray-200 px-6 py-3 bg-gray-50">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <label for="projectFilter" class="text-sm font-medium text-gray-700 mr-2">Project:</label>
+                            <select id="projectFilter" class="px-4 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">All Projects</option>
+                            </select>
+                            <button id="refreshProjectBtn" class="ml-2 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700">
+                                <i class="fas fa-sync-alt mr-1"></i> Load
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            
+            <!-- Dashboard Content -->
+            <main class="p-4">
+                <!-- Metric Selection Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-purple-500 transition-all duration-200" data-metric="fs">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-md font-semibold text-gray-800">FS+0d</h3>
+                                <p class="text-xs text-gray-600">Finish-to-Start</p>
+                            </div>
+                            <div class="bg-purple-100 p-2 rounded-full">
+                                <i class="fas fa-link text-purple-600 text-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-red-500 transition-all duration-200" data-metric="non-fs">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-md font-semibold text-gray-800">Non FS+0d</h3>
+                                <p class="text-xs text-gray-600">Other relationships</p>
+                            </div>
+                            <div class="bg-red-100 p-2 rounded-full">
+                                <i class="fas fa-random text-red-600 text-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all duration-200" data-metric="leads">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-md font-semibold text-gray-800">Leads</h3>
+                                <p class="text-xs text-gray-600">Activity relationships</p>
+                            </div>
+                            <div class="bg-blue-100 p-2 rounded-full">
+                                <i class="fas fa-arrow-right text-blue-600 text-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-green-500 transition-all duration-200" data-metric="lags">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-md font-semibold text-gray-800">Lags</h3>
+                                <p class="text-xs text-gray-600">Schedule delays</p>
+                            </div>
+                            <div class="bg-green-100 p-2 rounded-full">
+                                <i class="fas fa-clock text-green-600 text-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-orange-500 transition-all duration-200" data-metric="excessive-lags">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="text-md font-semibold text-gray-800">Excessive Lags</h3>
+                                <p class="text-xs text-gray-600">Critical delays</p>
+                            </div>
+                            <div class="bg-orange-100 p-2 rounded-full">
+                                <i class="fas fa-exclamation-triangle text-orange-600 text-lg"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Dynamic Content Area -->
+                <div id="metric-content" class="hidden">
+                    <!-- KPI Cards will be dynamically inserted here -->
+                    <div id="kpi-section" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"></div>
+                    
+                    <!-- Charts and Tables Section -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                        <!-- Chart Section -->
+                        <div id="chart-section" class="bg-white rounded-lg shadow-lg p-4">
+                            <div class="mb-3">
+                                <h3 class="text-md font-semibold text-gray-800">Distribution Chart</h3>
+                            </div>
+                            <div class="chart-container" style="height: 250px; position: relative;">
+                                <canvas id="metric-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- History Chart Section -->
+                        <div id="history-section" class="bg-white rounded-lg shadow-lg p-4">
+                            <div class="mb-3">
+                                <h3 class="text-md font-semibold text-gray-800">History Trend</h3>
+                            </div>
+                            <div class="chart-container" style="height: 250px; position: relative;">
+                                <canvas id="history-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Data Table Section -->
+                    <div id="table-section" class="bg-white rounded-lg shadow-lg">
+                        <div class="border-b border-gray-200 px-4 py-3">
+                            <h3 class="text-md font-semibold text-gray-800">Detailed Data</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full" id="metric-table">
+                                <thead id="table-head" class="bg-gray-50">
+                                    <!-- Table headers will be dynamically inserted -->
+                                </thead>
+                                <tbody id="table-body" class="bg-white divide-y divide-gray-200">
+                                    <!-- Table data will be dynamically inserted -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Initial State Message -->
+                <div id="initial-message" class="text-center py-16">
+                    <div class="bg-white rounded-lg shadow-lg p-8 max-w-md mx-auto">
+                        <i class="fas fa-search-plus text-gray-400 text-6xl mb-4"></i>
+                        <h3 class="text-xl font-semibold text-gray-800 mb-2">Select a Metric</h3>
+                        <p class="text-gray-600">Choose one of the metric cards above to view detailed schedule analytics</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="schedule-drilldown.js"></script>
+</body>
+</html> 

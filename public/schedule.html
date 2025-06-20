@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Schedule Analytics - Tool Name</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="dashboard.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- D3.js for Gantt Chart and Force-Directed Graph -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script type="module" src="schedule.js"></script>
+    <style>
+        /* D3 Gantt Chart styling */
+        .gantt-container {
+            height: auto !important;
+            min-height: 400px;
+            max-height: 80vh;
+            width: 100%;
+            overflow: auto;
+            position: relative;
+        }
+        
+        #d3GanttChart {
+            width: 100%;
+            height: auto;
+            min-height: 400px;
+            position: relative;
+            overflow: visible;
+        }
+        
+        .gantt-svg {
+            display: block;
+            width: 100%;
+        }
+        
+        /* Ensure parent containers expand to fit content */
+        #ganttTabPanel {
+            height: auto !important;
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+            overflow: auto;
+        }
+        
+        /* Make expand/collapse buttons more visible */
+        .expand-collapse-btn {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .expand-collapse-btn:hover {
+            fill: #c0c0c0;
+        }
+
+        .limit-controls {
+            display: none; /* Hidden by default, will show after loading */
+            margin-bottom: 10px;
+        }
+        
+        /* Task styling */
+        .gantt-task-bar {
+            cursor: pointer;
+            fill-opacity: 0.8;
+            stroke-width: 1;
+        }
+        .gantt-task-bar:hover {
+            fill-opacity: 1;
+            stroke-width: 2;
+        }
+        .gantt-milestone {
+            fill: #9932CC;
+            stroke: #7B2B9D;
+        }
+        .gantt-project {
+            fill: #3498DB;
+            stroke: #2471A3;
+        }
+        .gantt-task {
+            fill: #2ECC71;
+            stroke: #239B56;
+        }
+        .gantt-critical {
+            fill: #E74C3C;
+            stroke: #C0392B;
+        }
+        
+        /* Grid styling */
+        .gantt-grid line {
+            stroke: #E5E7EB;
+        }
+        .gantt-grid-major line {
+            stroke: #D1D5DB;
+        }
+        .gantt-axis text {
+            font-size: 10px;
+            fill: #6B7280;
+        }
+        .gantt-axis-x .tick line {
+            stroke: #D1D5DB;
+        }
+        .gantt-axis-y .tick line {
+            stroke: #D1D5DB;
+        }
+        
+        /* Force-directed graph styling */
+        #criticalPathGraph {
+            position: relative;
+            height: 400px;
+            width: 100%;
+            margin-bottom: 30px;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            background-color: #f9fafb;
+        }
+        .graph-node {
+            fill: #ef4444;
+            stroke: #dc2626;
+            stroke-width: 2px;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+        .graph-node:hover {
+            stroke-width: 3px;
+            stroke: #b91c1c;
+        }
+        .graph-link {
+            stroke: #dc2626;
+            stroke-opacity: 0.6;
+            stroke-width: 2px;
+            pointer-events: all;
+            /* Ensure links are visible */
+            fill: none;
+            stroke-linecap: round;
+        }
+        .graph-tooltip {
+            position: absolute;
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+            max-width: 250px;
+        }
+        .highlighted {
+            stroke-width: 4px !important;
+            stroke: #f97316 !important;
+        }
+        .highlighted-link {
+            stroke-width: 3px !important;
+            stroke-opacity: 1 !important;
+            stroke: #f97316 !important;
+        }
+        .dimmed {
+            opacity: 0.2;
+        }
+        
+        /* Make data table more compact */
+        #ganttDataTable th, #ganttDataTable td {
+            padding: 6px 8px;
+            white-space: nowrap;
+        }
+        #ganttDataTable th {
+            background-color: #f3f4f6;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        /* WBS Row styling */
+        .wbs-row {
+            background-color: #f3f4f6;
+            font-weight: 600;
+        }
+        /* Critical task styling */
+        .critical-row {
+            color: #e53e3e;
+        }
+        /* Ensure Gantt chart takes priority height */
+        #ganttDataTable {
+            flex-grow: 0;
+            flex-shrink: 0;
+            max-height: 250px;
+        }
+        #ganttDataTable > div {
+            overflow-x: auto;
+            overflow-y: hidden;
+            height: 100%;
+        }
+        #ganttDataTable table {
+            width: auto;
+        }
+        /* Ensure full-height layout */
+        .flex-1 {
+            display: flex;
+            flex-direction: column;
+        }
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        main > div {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        main > div > div:nth-child(2) {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        #cpmTableTabPanel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        #cpmSection {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+    <div class="flex h-screen bg-gray-100">
+        <!-- Sidebar -->
+        <div class="bg-blue-900 text-white w-64 px-6 py-8 overflow-y-auto flex flex-col">
+            <div class="flex items-center mb-8">
+                <i class="fas fa-building mr-2 text-2xl"></i>
+                <span class="text-xl font-bold">NIRMAN</span>
+            </div>
+            <nav class="flex-grow">
+                <p class="text-gray-400 text-xs uppercase tracking-wider mb-4">Main Navigation</p>
+                <a href="dashboard.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
+                </a>
+                <a href="compliance.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-shield-alt mr-2"></i> Compliance
+                </a>
+                <a href="3d-model.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-cube mr-2"></i> 3D Model
+                </a>
+                <a href="schedule.html" class="block py-2 px-4 rounded bg-blue-800 text-white mb-2 whitespace-nowrap transition-colors duration-200">
+                    <i class="fas fa-calendar mr-2"></i> Schedule Analytics
+                </a>
+                <a href="Table.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-table mr-2"></i> All Tables
+                </a>
+                <a href="version-history.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-history mr-2"></i> Version History
+                </a>
+                <a href="upload.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-upload mr-2"></i> Insert to DB
+                </a>
+                <a href="Chat.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-comments mr-2"></i> Chat
+                </a>
+                <a href="settings.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white mb-2 transition-colors duration-200">
+                    <i class="fas fa-cog mr-2"></i> Settings
+                </a>
+            </nav>
+            <div class="mt-auto pt-8">
+                <a href="index.html" class="block py-2 px-4 rounded text-gray-300 hover:bg-blue-800 hover:text-white transition-colors duration-200">
+                    <i class="fas fa-sign-out-alt mr-2"></i> Log Out
+                </a>
+            </div>
+        </div>
+
+        <!-- Main 1Content -->
+        <div class="flex-1 overflow-x-hidden overflow-y-auto flex flex-col">
+            <!-- Top Navigation -->
+            <header class="bg-white shadow-sm">
+                 <div class="flex items-center justify-between px-6 py-4">
+                    <div>
+                         <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Schedule Analytics</h1>
+                         <p class="text-sm md:text-base text-gray-600">Analyze project schedule data</p>
+                    </div>
+                     <div class="flex items-center text-sm md:text-base">
+                        <div class="text-gray-600 mr-4">
+                            <span class="font-medium">Project ID:</span> <span id="currentProjectId">N/A</span>
+                        </div>
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold mr-2">
+                                US
+                            </div>
+                            <span class="text-gray-800">User</span>
+                        </div>
+                    </div>
+                </div>
+                 <!-- Project Filter -->
+                <div class="border-t border-gray-200 px-6 py-3 bg-gray-50 project-filter-container">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <label for="projectFilter" class="text-sm md:text-base font-medium text-gray-700 mr-2">Project:</label>
+                            <select id="projectFilter" class="px-4 py-2 border border-gray-300 rounded-lg text-sm md:text-base shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="">Select a project...</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Add limit control that will be shown after Gantt loads -->
+                        <div id="limitControls" class="limit-controls flex items-center">
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Content Area -->
+            <main class="p-6 flex-1 flex flex-col">
+                <!-- Tab Navigation and Content Area -->
+                <div class="flex flex-col flex-1"> 
+                    <div class="flex items-center border-b border-gray-200 mb-4">
+                        <!-- Tab Buttons -->
+                        <nav class="flex space-x-1 md:space-x-2 flex-wrap">
+                            <button id="ganttTabBtn" class="tab-button py-2 px-3 md:px-4 border-b-2 border-blue-600 text-blue-600 font-medium focus:outline-none text-sm md:text-base">Gantt View</button>
+                            <button id="criticalPathTabBtn" class="tab-button py-2 px-3 md:px-4 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none text-sm md:text-base">Critical Path</button>
+                            <button id="floatAnalysisTabBtn" class="tab-button py-2 px-3 md:px-4 text-gray-500 hover:text-gray-700 hover:border-gray-300 focus:outline-none text-sm md:text-base">Float Analysis</button>
+                        </nav>
+                    </div>
+
+                    <!-- Tab Panels -->
+                    <div class="flex-1 flex flex-col relative" style="min-height: 75vh;">
+                        <!-- Gantt Chart Panel -->
+                        <div id="ganttTabPanel" class="bg-white p-4 rounded-lg shadow absolute w-full" style="height: 75vh; z-index: 10; display: block;">
+                            <!-- Add WBS Filter -->
+                            <div class="flex items-center mb-4">
+                                <label for="wbsLevelFilter" class="mr-2 font-medium text-gray-700">Filter by WBS Level:</label>
+                                <select id="wbsLevelFilter" class="px-3 py-1 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                    <option value="all">All Tasks</option>
+                                    <!-- Options will be populated dynamically -->
+                                </select>
+                                <button id="applyWbsFilter" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Apply</button>
+                                <button id="resetWbsFilter" class="ml-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Reset</button>
+                            </div>
+                            
+                            <!-- Add Lookahead Filter -->
+                            <div class="flex items-center mb-4">
+                                <label for="lookaheadFilter" class="mr-2 font-medium text-gray-700">Lookahead Period:</label>
+                                <select id="lookaheadFilter" class="px-3 py-1 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                    <option value="7">Next 7 Days</option>
+                                    <option value="14">Next 14 Days</option>
+                                    <option value="30">Next 30 Days</option>
+                                    <option value="90">Next 90 Days</option>
+                                </select>
+                                <button id="applyLookaheadFilter" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Apply</button>
+                                <button id="resetLookaheadFilter" class="ml-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Reset</button>
+                            </div>
+                            
+                            <!-- D3.js Gantt Chart container -->
+                            <div id="d3GanttChart" class="w-full h-full"></div>
+                            <div id="ganttLoading" class="flex justify-center items-center h-64 text-gray-500" style="display: none;">Loading Gantt...</div>
+                        </div>
+                        
+                        <!-- Critical Path Tab -->
+                        <div id="criticalPathTabPanel" class="bg-white p-4 rounded-lg shadow absolute w-full" style="height: 75vh; z-index: 10; display: none; flex-direction: column; overflow: hidden;">
+                            <h2 class="text-xl font-semibold mb-4 text-gray-700">Critical Path Analysis</h2>
+                            <div class="flex items-center mb-4 p-2 border-b border-gray-200">
+                                <label for="cpWbsLevelFilter" class="mr-2 font-medium text-gray-700 text-sm">Filter by WBS Level:</label>
+                                <select id="cpWbsLevelFilter" class="px-3 py-1 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                    <option value="all">All Tasks</option>
+                                    <!-- Options will be populated dynamically -->
+                                </select>
+                                <button id="cpApplyWbsFilter" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">Apply</button>
+                                <button id="cpResetWbsFilter" class="ml-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">Reset</button>
+                            </div>
+                            <div style="display: flex; flex-direction: column; height: calc(100% - 100px); overflow: hidden;">
+                                <div id="criticalPathVisualization" class="mb-2" style="flex: 0 0 30%; min-height: 0; overflow: hidden;"></div>
+                                <div id="cpGraphContainer" style="flex: 0 0 70%; overflow: auto; border: 1px solid #e5e7eb; border-radius: 0.375rem;">
+                                    <table id="criticalTasksTable" class="min-w-full divide-y divide-gray-200 text-sm border-collapse">
+                                        <thead>
+                                            <tr class="bg-gray-50">
+                                                <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 border-b" data-col="task_id">Task ID</th>
+                                                <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 border-b" data-col="task_name">Task Name</th>
+                                                <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 border-b" data-col="es">ES (hrs)</th>
+                                                <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 border-b" data-col="ef">EF (hrs)</th>
+                                                <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 border-b" data-col="duration">Duration (Hrs)</th>
+                                                <th class="px-3 py-2 text-left font-medium text-gray-500 uppercase tracking-wider sticky top-0 bg-gray-50 z-10 border-b" data-col="wbs_path">WBS Path</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="criticalTasksTableBody" class="bg-white divide-y divide-gray-200">
+                                            <!-- Critical task rows will be populated here -->
+                                            <tr><td colspan="6" class="text-center py-4 text-gray-500">Loading critical tasks...</td></tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Float Analysis Panel -->
+                        <div id="floatAnalysisTabPanel" class="bg-white p-4 rounded-lg shadow absolute w-full" style="height: 75vh; z-index: 10; display: none;">
+                            <div class="h-full" style="overflow-y: auto;">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 h-full">
+                                    <!-- Float Histogram Container -->
+                                    <div class="overflow-hidden">
+                                        <h3 class="text-lg md:text-xl font-semibold mb-3 text-gray-700">Total Float Distribution</h3>
+                                        <canvas id="floatHistogramChart"></canvas>
+                                    </div>
+                                    <!-- Near Critical Table Container -->
+                                    <div class="overflow-y-auto">
+                                         <h3 class="text-lg md:text-xl font-semibold mb-3 text-gray-700">Near-Critical Tasks (0.1 < TF <= 40 hrs)</h3>
+                                         <table id="nearCriticalTable" class="min-w-full divide-y divide-gray-200 text-sm md:text-base">
+                                             <thead class="bg-gray-50 sticky top-0">
+                                                <!-- Headers focusing on Float -->
+                                                <tr>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                                    <th class="px-4 py-2 text-left font-medium text-gray-500 uppercase tracking-wider">TF (hrs)</th>
+                                                </tr>
+                                             </thead>
+                                             <tbody id="nearCriticalTableBody" class="bg-white divide-y divide-gray-200">
+                                                  <tr><td colspan="3" class="text-center py-4 text-gray-500">Loading near-critical data...</td></tr>
+                                             </tbody>
+                                         </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+</body>
+</html> 

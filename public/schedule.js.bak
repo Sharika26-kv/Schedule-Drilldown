@@ -1,0 +1,2909 @@
+// BIM_XER_Masher - Schedule JavaScript
+
+// Add CSS styles for the critical path table
+document.addEventListener('DOMContentLoaded', function() {
+    const style = document.createElement('style');
+    style.textContent = `
+        /* Critical Path Table Styles */
+        .critical-path-table-container {
+            margin-top: 2rem;
+            border: 1px solid #e5e7eb;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .wbs-row {
+            background-color: #f9fafb;
+            font-weight: 500;
+        }
+        
+        .expand-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 18px;
+            height: 18px;
+            text-align: center;
+            line-height: 16px;
+            font-size: 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            user-select: none;
+            background-color: #e5e7eb;
+            color: #4b5563;
+            margin-right: 6px;
+            transition: background-color 0.2s;
+        }
+        
+        .expand-btn:hover {
+            background-color: #d1d5db;
+        }
+        
+        .task-row:nth-child(even) {
+            background-color: #f9fafb;
+        }
+        
+        .task-row.bg-red-50 {
+            background-color: #fef2f2;
+        }
+        
+        .task-row.bg-red-50:hover {
+            background-color: #fee2e2;
+        }
+    `;
+    document.head.appendChild(style);
+});
+
+// --- Global State and Elements ---
+    const state = {
+        currentProject: localStorage.getItem('selectedProjectId') || null,
+        scheduleActivities: [],
+        cpmResults: [],
+        allCriticalTasks: [], // Store all critical tasks for pagination/filtering
+        activeTab: 'gantt',
+        floatHistogramInstance: null,
+        lastGanttData: null, // Store the last loaded Gantt data
+        wbsHierarchy: null, // Store WBS hierarchy for reference
+        expandedState: {}, // Store expansion state of WBS items
+        cpmFilters: {
+            dateRangeFilter: 'all',
+            statusFilter: 'notComplete',
+            customDateStart: null,
+            customDateEnd: null,
+            wbsFilter: 'all',
+            maxTasks: 300,
+            applyFilters: true
+        },
+        isLoadingProject: null // Added loading flag
+    };
+
+const elements = {}; // Will be populated in DOMContentLoaded
+
+// Basic Loading State Function (Placeholder - enhance as needed)
+function setLoadingState(isLoading) {
+    console.log(`[UI] Setting loading state: ${isLoading}`);
+    // Add actual UI manipulation here if needed (e.g., show/hide spinner)
+}
+
+// --- Page Title Function ---
+    function updatePageTitle() {
+    // Update element text content if it exists
+        if (elements.pageTitle) {
+             if (state.currentProject) {
+                 elements.pageTitle.textContent = `Schedule Analytics (Project: ${state.currentProject})`;
+             } else {
+                 elements.pageTitle.textContent = 'Schedule Analytics (No Project Selected)';
+             }
+        console.log(`[UI] Updated page title to: ${elements.pageTitle.textContent}`);
+                } else {
+        console.warn("[UI] Page title element not found for update.");
+    }
+    
+    // Also update the document title
+    const projectName = state.currentProject || 'No Project Selected';
+    document.title = `Schedule | ${projectName}`;
+    console.log(`[UI] Document title updated: ${document.title}`);
+}
+
+// --- AWP Mapping Data ---
+const AWP_LEVEL1_MAPPING = { 'Admin': ['Admin'], 'Colo01': ['Colo01', 'COLO1', 'Colo1'], 'Colo02': ['Colo02', 'COLO2', 'Colo2'], 'Colo03': ['Colo03', 'COLO3', 'Colo3'], 'Colo04': ['Colo04', 'COLO4', 'Colo4'], 'Colo05': ['Colo05', 'COLO5', 'Colo5'] };
+const AWP_LEVEL2_MAPPING = { 'WT': ['Weather Tight', 'WT'], 'L1': ['Commissioning Level 1 Red Tag', 'L1'], 'L2': ['Commissioning Level 2 Yellow Tag', 'L2'], 'L3': ['Commissioning Level 3 Green Tag', 'L3'], 'L4': ['Commissioning Level 4 Blue Tag', 'L4'], 'L5': ['Commissioning Level 5', 'System Test White Tag', 'L5'], 'SC': ['Substantial Completion', 'SC'] };
+const AWP_LEVEL3_MAPPING = { 'OA': ['Outside Area', 'OA'], 'BD': ['Main Building', 'BD'], 'CB': ['Central Utility Building', 'CB'], 'CP': ['Central Utility Plant', 'CP'], 'SS': ['Substation', 'SS'], 'GN': ['Generator Yard', 'GN'], 'FT': ['Fuel Tank Area', 'FT'], 'WTA': ['Water Treatment Area', 'WTA'] };
+const AWP_LEVEL4_MAPPING = { 'UG': ['Underground', 'UG'], 'F1': ['First Level', 'F1'], 'F2': ['Second Level', 'F2'], 'F3': ['Third Level', 'F3'], 'F4': ['Fourth Level', 'F4'], 'F5': ['Fifth Level', 'F5'], 'F6': ['Sixth Level', 'F6'] };
+const AWP_LEVEL5_MAPPING = { 'CIV': ['Civil', 'CIV'], 'STR': ['Structural', 'STR'], 'ARC': ['Architecture', 'ARC'], 'ELE': ['Electrical', 'ELE'], 'MEC': ['Mechanical', 'MEC'], 'PLB': ['Plumbing', 'PLB'], 'TEL': ['Telecomm', 'TEL'], 'FPR': ['Fire Protection', 'FPR'], 'FAL': ['Fire Alarm', 'FAL'], 'BAS': ['Building Automation', 'BAS'], 'SEC': ['Security', 'SEC'], 'LAN': ['Landscape', 'LAN'], 'CXM': ['Commissioning', 'CXM'] };
+const AWP_LEVEL6_MAPPING = { 'FDW': ['Foundation', 'FDW'], 'SOG': ['Slab on Grade', 'SOG'], 'EEP': ['Exterior Equipment', 'EEP'], 'UDU': ['Underground Duct', 'UDU'], 'UWU': ['Underground Wire', 'UWU'], 'MSC': ['Miscellaneous', 'MSC'], 'ENV': ['Envelope', 'ENV'], 'EES': ['Exterior Equipment Support', 'EES'], 'EFN': ['Exterior Finish', 'EFN'], 'IFN': ['Interior Finish', 'IFN'], 'ACT': ['Acoustical', 'ACT'], 'HAC': ['Hot Aisle Containment', 'HAC'], 'USI': ['Under Slab', 'USI'], 'RGH': ['Rough-In', 'RGH'], 'CTM': ['Cable Tray Main', 'CTM'], 'CTD': ['Cable Tray Distribution', 'CTD'], 'CPL': ['Cable Pulling', 'CPL'], 'CTR': ['Cable Termination', 'CTR'], 'ACC': ['Air Cooled Condenser', 'ACC'], 'BTM': ['Basket Tray', 'BTM'], 'DAS': ['Digital Antenna', 'DAS'], 'NPF': ['Non-production Facility', 'NPF'], 'PRF': ['Production Facility', 'PRF'], 'INS': ['Installation', 'INS'], 'L1R': ['Level 1 - Red Tag', 'L1R'], 'L2I': ['Level 2 - Mechanical', 'L2I'], 'L2P': ['Level 2 - Power', 'L2P'], 'L2C': ['Level 2 - Controls', 'L2C'], 'L2Y': ['Level 2 - Yellow Tag', 'L2Y'], 'L3S': ['Level 3 - Safety', 'L3S'], 'L3L': ['Level 3 - Load', 'L3L'], 'L3B': ['Level 3 - Balance', 'L3B'], 'L3E': ['Level 3 - Electrical', 'L3E'], 'L3V': ['Level 3 - Verification', 'L3V'], 'L3G': ['Level 3 - Green Tag', 'L3G'], 'L4B': ['Level 4 - Blue Tag', 'L4B'], 'L5W': ['Level 5 - White Tag', 'L5W'] };
+
+// --- Hierarchical Gantt Chart Functions ---
+
+// Configuration for hierarchical Gantt chart
+const hierarchicalGanttConfig = {
+    currentProjectId: null
+};
+
+// Initialize the D3.js Gantt chart
+function initializeD3Gantt() {
+    console.log("[D3 Gantt] Initializing...");
+    
+    try {
+        // Clear existing content
+        const ganttContainer = document.getElementById("d3GanttChart");
+        if (ganttContainer) {
+            ganttContainer.innerHTML = "";
+            console.log("[D3 Gantt] Container cleared");
+        } else {
+            console.error("[D3 Gantt] Container not found!");
+            return;
+        }
+        
+        // Create an empty SVG container with loading message
+        const containerWidth = ganttContainer.clientWidth;
+        const containerHeight = ganttContainer.clientHeight || 500;
+        
+        const svg = d3.select("#d3GanttChart")
+            .append("svg")
+            .attr("width", containerWidth)
+            .attr("height", containerHeight)
+            .attr("class", "gantt-svg");
+            
+        // Add a loading message that will be removed when data is loaded
+        svg.append("text")
+            .attr("x", containerWidth / 2)
+            .attr("y", containerHeight / 2)
+            .attr("text-anchor", "middle")
+            .attr("class", "loading-text")
+            .text("Loading Gantt chart data...");
+            
+        // Set up event listeners for resizing
+        window.addEventListener('resize', function() {
+            if (state.ganttData && state.ganttData.length > 0) {
+                renderD3Gantt(state.ganttData);
+            }
+        });
+        
+        console.log("[D3 Gantt] D3.js Gantt initialized successfully");
+    } catch (error) {
+        console.error("[D3 Gantt] Error during initialization:", error);
+        showGanttError("Failed to initialize D3 Gantt chart: " + error.message);
+    }
+}
+
+// Function to load hierarchical Gantt data
+function loadHierarchicalGanttData() {
+    const projectId = state.currentProject;
+    if (!projectId) {
+        console.error("[D3 Gantt] No project selected");
+        showGanttError("Please select a project to view Gantt chart.");
+        return Promise.reject(new Error("No project selected")); // Return a rejected promise
+    }
+    
+    console.log(`[D3 Gantt] Loading data for project: ${projectId}`);
+    hierarchicalGanttConfig.currentProjectId = projectId;
+    
+    // Show loading indicator
+    showGanttLoading(true);
+    
+    // Fetch hierarchical data from the API and return the promise
+    return fetch(`/api/hierarchical-gantt?projectId=${projectId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Failed to fetch hierarchical data: ${response.statusText}`);
+            }
+            return response.json(); // This promise resolves with the JSON data
+        })
+        .catch(error => {
+            console.error("[D3 Gantt] Error loading hierarchical data:", error);
+            showGanttError(`Failed to load Gantt data: ${error.message}`);
+            showGanttLoading(false);
+            throw error; // Re-throw the error to propagate the rejection
+        });
+}
+
+// Function to create WBS hierarchy from the API data
+function createWBSHierarchy(data) {
+    console.log("[D3 Gantt] Creating WBS hierarchy...");
+    
+    // Initialize empty hierarchy object
+    const wbsHierarchy = {};
+    
+    // Process each task to build the WBS hierarchy
+    data.forEach(task => {
+        if (task.wbs_path) {
+            const segments = task.wbs_path.split(' > ');
+            let currentPath = '';
+            
+            // Build up the hierarchy for each segment in the path
+            segments.forEach((segment, index) => {
+                currentPath = currentPath ? currentPath + ' > ' + segment : segment;
+                
+                // Create the WBS node if it doesn't exist yet
+                if (!wbsHierarchy[currentPath]) {
+                    wbsHierarchy[currentPath] = {
+                        level: index,
+                        name: segment,
+                        path: currentPath,
+                        expanded: index < 2, // Expand top two levels by default
+                        tasks: [],
+                        is_wbs: true
+                    };
+                }
+            });
+        }
+    });
+    
+    return wbsHierarchy;
+}
+
+// Function to process and render hierarchical data
+function processAndRenderHierarchicalData(data) {
+    try {
+        console.log(`[D3 Gantt] Processing ${data.length} rows of hierarchical data...`);
+        
+        // Store original data for future reference when expanding/collapsing
+        state.lastGanttData = [...data];
+        
+        // First create WBS hierarchy
+        const wbsHierarchy = createWBSHierarchy(data);
+        console.log(`[D3 Gantt] Created WBS hierarchy with ${Object.keys(wbsHierarchy).length} entries`);
+        
+        // Store the WBS hierarchy in the state for future reference
+        state.wbsHierarchy = wbsHierarchy;
+        
+        // Then create task hierarchy with WBS level 2 aggregation
+        const hierarchicalTasks = createTaskHierarchyWithAggregation(data, wbsHierarchy);
+        console.log(`[D3 Gantt] Created task hierarchy with aggregation`);
+        
+        // Store processed data in state for future reference
+        state.ganttData = hierarchicalTasks;
+        
+        // Populate WBS filter dropdown with second-level WBS items
+        populateWbsFilterDropdown(hierarchicalTasks);
+        
+        // Also populate the Critical Path WBS filter dropdown with the same items
+        populateCpWbsFilterDropdown(hierarchicalTasks);
+        
+        // Render the Gantt chart
+        renderD3Gantt(hierarchicalTasks);
+        
+        // Hide loading indicator
+        showGanttLoading(false);
+    } catch (error) {
+        console.error("[D3 Gantt] Error processing data:", error);
+        showGanttError(`Failed to process Gantt data: ${error.message}`);
+        showGanttLoading(false);
+    }
+}
+
+// Function to toggle expansion of a WBS item and re-render the chart
+function toggleWbsExpansion(taskId, newExpandedState) {
+    console.log(`[D3 Gantt] Toggling WBS expansion: ${taskId}, new state: ${newExpandedState}`);
+    
+    // Get the expansion state from global state
+    if (!state.expandedState) {
+        state.expandedState = {};
+    }
+    
+    // Update the expansion state
+    state.expandedState[taskId] = newExpandedState;
+    console.log('[D3 Gantt] Updated expanded states:', state.expandedState);
+    
+    if (state.lastGanttData && state.wbsHierarchy) {
+        console.log('[D3 Gantt] Reprocessing data with updated expansion state');
+        
+        // Create a new processed data structure with the updated expansion state
+        const hierarchicalTasks = createTaskHierarchyWithAggregation(state.lastGanttData, state.wbsHierarchy);
+        
+        // Update the state
+        state.ganttData = hierarchicalTasks;
+        
+        // Re-render the chart
+        renderD3Gantt(hierarchicalTasks);
+    } else {
+        console.error('[D3 Gantt] Cannot toggle expansion: missing original data or WBS hierarchy');
+    }
+}
+
+// Function to create task hierarchy with WBS level 2 aggregation
+function createTaskHierarchyWithAggregation(data, wbsHierarchy) {
+    console.log("[D3 Gantt] Creating task hierarchy with multilevel WBS aggregation...");
+    
+    // Maps to store WBS items at each level
+    const wbsLevel1Items = new Map();
+    const wbsLevel2Items = new Map();
+    const wbsLevel3Items = new Map();
+    const wbsLevel4Items = new Map();
+    
+    // Get the expansion state from global state, or initialize it
+    if (!state.expandedState) {
+        state.expandedState = {};
+    }
+    const expandedState = state.expandedState;
+    
+    console.log("[D3 Gantt] Using expanded states:", expandedState);
+    
+    // Process WBS structure to identify all WBS levels
+    Object.entries(wbsHierarchy).forEach(([path, wbs]) => {
+        const segments = path.split(' > ');
+        const level = segments.length;
+        
+        // Process based on WBS level
+        if (level === 1) {
+            // Level 1 WBS
+            const taskId = "wbs_" + path.replace(/ > /g, "_");
+            wbsLevel1Items.set(path, {
+                ...wbs,
+                children: [],
+                allTasks: [],
+                tasks: [], // Direct tasks under this WBS level
+                expanded: expandedState[taskId] !== undefined ? expandedState[taskId] : true, // Default to expanded
+                task_id: taskId
+            });
+            console.log(`[D3 Gantt] Level 1 WBS: ${path}, expanded: ${wbsLevel1Items.get(path).expanded}`);
+        } else if (level === 2) {
+            // Level 2 WBS
+            const parentPath = segments[0];
+            const taskId = "wbs_" + path.replace(/ > /g, "_");
+            wbsLevel2Items.set(path, {
+                ...wbs,
+                parentPath,
+                children: [],
+                tasks: [],
+                hasCriticalTasks: false,
+                startDate: null,
+                endDate: null,
+                expanded: expandedState[taskId] !== undefined ? expandedState[taskId] : false, // Use stored or default
+                task_id: taskId
+            });
+            
+            console.log(`[D3 Gantt] Level 2 WBS: ${path}, expanded: ${wbsLevel2Items.get(path).expanded}`);
+            
+            // Add as child to parent WBS level 1
+            if (wbsLevel1Items.has(parentPath)) {
+                wbsLevel1Items.get(parentPath).children.push(path);
+            }
+        } else if (level === 3) {
+            // Level 3 WBS
+            const parentPath = segments[0] + ' > ' + segments[1];
+            const taskId = "wbs_" + path.replace(/ > /g, "_");
+            wbsLevel3Items.set(path, {
+                ...wbs,
+                parentPath,
+                children: [],
+                tasks: [],
+                hasCriticalTasks: false,
+                startDate: null,
+                endDate: null,
+                expanded: expandedState[taskId] !== undefined ? expandedState[taskId] : false, // Use stored or default
+                task_id: taskId
+            });
+            
+            console.log(`[D3 Gantt] Level 3 WBS: ${path}, expanded: ${wbsLevel3Items.get(path).expanded}`);
+            
+            // Add as child to parent WBS level 2
+            if (wbsLevel2Items.has(parentPath)) {
+                wbsLevel2Items.get(parentPath).children.push(path);
+            }
+        } else if (level === 4) {
+            // Level 4 WBS
+            const parentPath = segments[0] + ' > ' + segments[1] + ' > ' + segments[2];
+            const taskId = "wbs_" + path.replace(/ > /g, "_");
+            wbsLevel4Items.set(path, {
+                ...wbs,
+                parentPath,
+                tasks: [],
+                hasCriticalTasks: false,
+                startDate: null,
+                endDate: null,
+                expanded: expandedState[taskId] !== undefined ? expandedState[taskId] : false, // Use stored or default
+                task_id: taskId
+            });
+            
+            console.log(`[D3 Gantt] Level 4 WBS: ${path}, expanded: ${wbsLevel4Items.get(path).expanded}`);
+            
+            // Add as child to parent WBS level 3
+            if (wbsLevel3Items.has(parentPath)) {
+                wbsLevel3Items.get(parentPath).children.push(path);
+            }
+        }
+    });
+    
+    // Group tasks by their WBS paths
+    const tasksByWbsPath = new Map();
+    data.forEach(task => {
+        if (!task.wbs_path) return;
+        
+        if (!tasksByWbsPath.has(task.wbs_path)) {
+            tasksByWbsPath.set(task.wbs_path, []);
+        }
+        tasksByWbsPath.get(task.wbs_path).push(task);
+    });
+    
+    // Group tasks by their WBS paths and update the task WBS objects
+    data.forEach(task => {
+        if (!task.wbs_path) return;
+        
+        const segments = task.wbs_path.split(' > ');
+        
+        // Add tasks to level 1 WBS
+        if (segments.length >= 1) {
+            const level1Path = segments[0];
+            if (wbsLevel1Items.has(level1Path)) {
+                wbsLevel1Items.get(level1Path).allTasks.push(task);
+            }
+        }
+        
+        // Add tasks to appropriate level WBS based on path length
+        if (segments.length === 1) {
+            // Task directly under level 1
+            const level1Path = segments[0];
+            if (wbsLevel1Items.has(level1Path)) {
+                wbsLevel1Items.get(level1Path).tasks.push(task);
+            }
+        } else if (segments.length === 2) {
+            // Task under level 2
+            const level2Path = segments[0] + ' > ' + segments[1];
+            if (wbsLevel2Items.has(level2Path)) {
+                const level2 = wbsLevel2Items.get(level2Path);
+                level2.tasks.push(task);
+                
+                // Update critical flag
+            if (task.driving_path_flag === 'Y') {
+                    level2.hasCriticalTasks = true;
+                }
+                
+                // Update start date (find earliest)
+                if (task.start_date) {
+                    const taskStartDate = new Date(task.start_date);
+                    if (!level2.startDate || taskStartDate < level2.startDate) {
+                        level2.startDate = taskStartDate;
+                    }
+                }
+                
+                // Update end date (find latest)
+                if (task.end_date) {
+                    const taskEndDate = new Date(task.end_date);
+                    if (!level2.endDate || taskEndDate > level2.endDate) {
+                        level2.endDate = taskEndDate;
+                    }
+                }
+            }
+        } else if (segments.length === 3) {
+            // Task under level 3
+            const level3Path = segments[0] + ' > ' + segments[1] + ' > ' + segments[2];
+            if (wbsLevel3Items.has(level3Path)) {
+                const level3 = wbsLevel3Items.get(level3Path);
+                level3.tasks.push(task);
+                
+                // Update critical flag
+            if (task.driving_path_flag === 'Y') {
+                    level3.hasCriticalTasks = true;
+                }
+                
+                // Update start date (find earliest)
+                if (task.start_date) {
+                    const taskStartDate = new Date(task.start_date);
+                    if (!level3.startDate || taskStartDate < level3.startDate) {
+                        level3.startDate = taskStartDate;
+                    }
+                }
+                
+                // Update end date (find latest)
+                if (task.end_date) {
+                    const taskEndDate = new Date(task.end_date);
+                    if (!level3.endDate || taskEndDate > level3.endDate) {
+                        level3.endDate = taskEndDate;
+                    }
+                }
+            }
+        } else if (segments.length === 4) {
+            // Task under level 4
+            const level4Path = segments[0] + ' > ' + segments[1] + ' > ' + segments[2] + ' > ' + segments[3];
+            if (wbsLevel4Items.has(level4Path)) {
+                const level4 = wbsLevel4Items.get(level4Path);
+                level4.tasks.push(task);
+                
+                // Update critical flag
+                if (task.driving_path_flag === 'Y') {
+                    level4.hasCriticalTasks = true;
+                }
+                
+                // Update start date (find earliest)
+                if (task.start_date) {
+                    const taskStartDate = new Date(task.start_date);
+                    if (!level4.startDate || taskStartDate < level4.startDate) {
+                        level4.startDate = taskStartDate;
+                    }
+                }
+                
+                // Update end date (find latest)
+                if (task.end_date) {
+                    const taskEndDate = new Date(task.end_date);
+                    if (!level4.endDate || taskEndDate > level4.endDate) {
+                        level4.endDate = taskEndDate;
+                    }
+                }
+            }
+        }
+    });
+    
+    // Calculate date ranges for all WBS nodes based on their children and tasks
+    calculateWbsDateRanges(wbsLevel1Items, wbsLevel2Items, wbsLevel3Items, wbsLevel4Items);
+    
+    // Create a flat list for the final task hierarchy
+    const hierarchicalTasks = [];
+    
+    // IMPROVED APPROACH: Create a hierarchical output structure that respects parent-child relationships
+    
+    // First, add all Level 1 WBS nodes
+    wbsLevel1Items.forEach((wbs, path) => {
+        hierarchicalTasks.push({
+            task_id: "wbs_" + path.replace(/ > /g, "_"),
+            task_name: wbs.name,
+            wbs_path: path,
+            wbs_level: 0,
+            is_wbs: true,
+            is_level1: true,
+            expanded: wbs.expanded,
+            start_date: wbs.startDate || findEarliestStartDate(wbs.allTasks),
+            end_date: wbs.endDate || findLatestEndDate(wbs.allTasks),
+            child_paths: wbs.children,
+            sort_key: path // Add sort key for stable ordering
+        });
+        
+        console.log(`[D3 Gantt] Added Level 1 WBS to output: ${path}, expanded: ${wbs.expanded}`);
+        
+        // If this Level 1 WBS is expanded, add its direct tasks and children
+        if (wbs.expanded) {
+            // First add direct tasks under this Level 1 WBS
+            const tasksUnderWbs = tasksByWbsPath.get(path) || [];
+            tasksUnderWbs.forEach(task => {
+                hierarchicalTasks.push({
+                    ...task,
+                    is_wbs: false,
+                    parent_level1: path,
+                    sort_key: path + ">task_" + task.task_id // Sort key to keep tasks under their parent
+                });
+            });
+            
+            if (tasksUnderWbs.length > 0) {
+                console.log(`[D3 Gantt] Added ${tasksUnderWbs.length} direct tasks under Level 1 WBS: ${path}`);
+            }
+            
+            // Then add all Level 2 children of this Level 1 WBS
+            const childPaths = wbs.children || [];
+            childPaths.forEach(childPath => {
+                if (wbsLevel2Items.has(childPath)) {
+                    const wbs2 = wbsLevel2Items.get(childPath);
+                    
+                    // Add the Level 2 WBS node
+                    hierarchicalTasks.push({
+                        task_id: "wbs_" + childPath.replace(/ > /g, "_"),
+                        task_name: wbs2.name,
+                        wbs_path: childPath,
+                        wbs_level: 1,
+                        is_wbs: true,
+                        is_level2: true,
+                        is_aggregated: true,
+                        has_critical_tasks: wbs2.hasCriticalTasks,
+                        expanded: wbs2.expanded,
+                        task_count: wbs2.tasks.length,
+                        start_date: wbs2.startDate,
+                        end_date: wbs2.endDate,
+                        aggregated_tasks: wbs2.tasks,
+                        parent_path: wbs2.parentPath,
+                        child_paths: wbs2.children,
+                        sort_key: childPath // Sort key for stable ordering
+                    });
+                    
+                    console.log(`[D3 Gantt] Added Level 2 WBS to output: ${childPath}, expanded: ${wbs2.expanded}`);
+                    
+                    // If this Level 2 WBS is expanded, add its direct tasks and children
+                    if (wbs2.expanded) {
+                        // Add direct tasks under this Level 2 WBS
+                        const tasksUnderLevel2 = tasksByWbsPath.get(childPath) || [];
+                        tasksUnderLevel2.forEach(task => {
+                            hierarchicalTasks.push({
+                                ...task,
+                                is_wbs: false,
+                                parent_level2: childPath,
+                                sort_key: childPath + ">task_" + task.task_id
+                            });
+                        });
+                        
+                        if (tasksUnderLevel2.length > 0) {
+                            console.log(`[D3 Gantt] Added ${tasksUnderLevel2.length} tasks under expanded Level 2 WBS: ${childPath}`);
+                        }
+                        
+                        // Add Level 3 children of this Level 2 WBS
+                        const level3ChildPaths = wbs2.children || [];
+                        level3ChildPaths.forEach(level3Path => {
+                            if (wbsLevel3Items.has(level3Path)) {
+                                const wbs3 = wbsLevel3Items.get(level3Path);
+                                
+                                // Add the Level 3 WBS node
+                                hierarchicalTasks.push({
+                                    task_id: "wbs_" + level3Path.replace(/ > /g, "_"),
+                                    task_name: wbs3.name,
+                                    wbs_path: level3Path,
+                                    wbs_level: 2,
+                                    is_wbs: true,
+                                    is_level3: true,
+                                    is_aggregated: true,
+                                    has_critical_tasks: wbs3.hasCriticalTasks,
+                                    expanded: wbs3.expanded,
+                                    task_count: wbs3.tasks.length,
+                                    start_date: wbs3.startDate,
+                                    end_date: wbs3.endDate,
+                                    aggregated_tasks: wbs3.tasks,
+                                    parent_path: wbs3.parentPath,
+                                    child_paths: wbs3.children,
+                                    sort_key: level3Path
+                                });
+                                
+                                console.log(`[D3 Gantt] Added Level 3 WBS to output: ${level3Path}, expanded: ${wbs3.expanded}`);
+                                
+                                // If this Level 3 WBS is expanded, add its direct tasks and children
+                                if (wbs3.expanded) {
+                                    // Add direct tasks under this Level 3 WBS
+                                    const tasksUnderLevel3 = tasksByWbsPath.get(level3Path) || [];
+                                    tasksUnderLevel3.forEach(task => {
+                                        hierarchicalTasks.push({
+                                            ...task,
+                                            is_wbs: false,
+                                            parent_level3: level3Path,
+                                            sort_key: level3Path + ">task_" + task.task_id
+                                        });
+                                    });
+                                    
+                                    if (tasksUnderLevel3.length > 0) {
+                                        console.log(`[D3 Gantt] Added ${tasksUnderLevel3.length} tasks under expanded Level 3 WBS: ${level3Path}`);
+                                    }
+                                    
+                                    // Add Level 4 children of this Level 3 WBS
+                                    const level4ChildPaths = wbs3.children || [];
+                                    level4ChildPaths.forEach(level4Path => {
+                                        if (wbsLevel4Items.has(level4Path)) {
+                                            const wbs4 = wbsLevel4Items.get(level4Path);
+                                            
+                                            // Add the Level 4 WBS node
+                                            hierarchicalTasks.push({
+                                                task_id: "wbs_" + level4Path.replace(/ > /g, "_"),
+                                                task_name: wbs4.name,
+                                                wbs_path: level4Path,
+                                                wbs_level: 3,
+                                                is_wbs: true,
+                                                is_level4: true,
+                                                is_aggregated: true,
+                                                has_critical_tasks: wbs4.hasCriticalTasks,
+                                                expanded: wbs4.expanded,
+                                                task_count: wbs4.tasks.length,
+                                                start_date: wbs4.startDate,
+                                                end_date: wbs4.endDate,
+                                                aggregated_tasks: wbs4.tasks,
+                                                parent_path: wbs4.parentPath,
+                                                sort_key: level4Path
+                                            });
+                                            
+                                            console.log(`[D3 Gantt] Added Level 4 WBS to output: ${level4Path}, expanded: ${wbs4.expanded}`);
+                                            
+                                            // If this Level 4 WBS is expanded, add its direct tasks
+                                            if (wbs4.expanded) {
+                                                const tasksUnderLevel4 = tasksByWbsPath.get(level4Path) || [];
+                                                tasksUnderLevel4.forEach(task => {
+                                                    hierarchicalTasks.push({
+                                                        ...task,
+                                                        is_wbs: false,
+                                                        parent_level4: level4Path,
+                                                        sort_key: level4Path + ">task_" + task.task_id
+                                                    });
+                                                });
+                                                
+                                                if (tasksUnderLevel4.length > 0) {
+                                                    console.log(`[D3 Gantt] Added ${tasksUnderLevel4.length} tasks under expanded Level 4 WBS: ${level4Path}`);
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    });
+    
+    // Add a stable sort based on the sort_key to ensure proper hierarchy order
+    hierarchicalTasks.sort((a, b) => {
+        if (!a.sort_key) return -1;
+        if (!b.sort_key) return 1;
+        return a.sort_key.localeCompare(b.sort_key);
+    });
+    
+    console.log(`[D3 Gantt] Created hierarchical structure with ${hierarchicalTasks.length} total visible tasks`);
+    return hierarchicalTasks;
+}
+
+// Helper functions for finding date ranges
+function findEarliestStartDate(tasks) {
+    if (!tasks || tasks.length === 0) return null;
+    
+    return tasks.reduce((earliest, task) => {
+        if (!task.start_date) return earliest;
+        const taskDate = new Date(task.start_date);
+        if (!earliest || taskDate < earliest) {
+            return taskDate;
+        }
+        return earliest;
+    }, null);
+}
+
+function findLatestEndDate(tasks) {
+    if (!tasks || tasks.length === 0) return null;
+    
+    return tasks.reduce((latest, task) => {
+        if (!task.end_date) return latest;
+        const taskDate = new Date(task.end_date);
+        if (!latest || taskDate > latest) {
+            return taskDate;
+        }
+        return latest;
+    }, null);
+}
+
+// New helper function to calculate date ranges for WBS nodes based on their children
+function calculateWbsDateRanges(wbsLevel1Items, wbsLevel2Items, wbsLevel3Items, wbsLevel4Items) {
+    console.log("[D3 Gantt] Calculating date ranges for WBS nodes...");
+    
+    // Calculate date ranges for Level 4 WBS nodes from their tasks
+    wbsLevel4Items.forEach((wbs, path) => {
+        if (wbs.tasks && wbs.tasks.length > 0) {
+            wbs.startDate = findEarliestStartDate(wbs.tasks);
+            wbs.endDate = findLatestEndDate(wbs.tasks);
+            console.log(`[D3 Gantt] Level 4 WBS: ${path}, date range: ${wbs.startDate?.toISOString()} to ${wbs.endDate?.toISOString()}`);
+        }
+    });
+    
+    // Calculate date ranges for Level 3 WBS nodes from their tasks and children
+    wbsLevel3Items.forEach((wbs, path) => {
+        // Start with dates from direct tasks
+        let startDate = wbs.tasks && wbs.tasks.length > 0 ? findEarliestStartDate(wbs.tasks) : null;
+        let endDate = wbs.tasks && wbs.tasks.length > 0 ? findLatestEndDate(wbs.tasks) : null;
+        
+        // Include dates from Level 4 children
+        if (wbs.children && wbs.children.length > 0) {
+            wbs.children.forEach(childPath => {
+                if (wbsLevel4Items.has(childPath)) {
+                    const childWbs = wbsLevel4Items.get(childPath);
+                    if (childWbs.startDate && (!startDate || childWbs.startDate < startDate)) {
+                        startDate = childWbs.startDate;
+                    }
+                    if (childWbs.endDate && (!endDate || childWbs.endDate > endDate)) {
+                        endDate = childWbs.endDate;
+                    }
+                }
+            });
+        }
+        
+        wbs.startDate = startDate;
+        wbs.endDate = endDate;
+        console.log(`[D3 Gantt] Level 3 WBS: ${path}, date range: ${wbs.startDate?.toISOString()} to ${wbs.endDate?.toISOString()}`);
+    });
+    
+    // Calculate date ranges for Level 2 WBS nodes from their tasks and children
+    wbsLevel2Items.forEach((wbs, path) => {
+        // Start with dates from direct tasks
+        let startDate = wbs.tasks && wbs.tasks.length > 0 ? findEarliestStartDate(wbs.tasks) : null;
+        let endDate = wbs.tasks && wbs.tasks.length > 0 ? findLatestEndDate(wbs.tasks) : null;
+        
+        // Include dates from Level 3 children
+        if (wbs.children && wbs.children.length > 0) {
+            wbs.children.forEach(childPath => {
+                if (wbsLevel3Items.has(childPath)) {
+                    const childWbs = wbsLevel3Items.get(childPath);
+                    if (childWbs.startDate && (!startDate || childWbs.startDate < startDate)) {
+                        startDate = childWbs.startDate;
+                    }
+                    if (childWbs.endDate && (!endDate || childWbs.endDate > endDate)) {
+                        endDate = childWbs.endDate;
+                    }
+                }
+            });
+        }
+        
+        wbs.startDate = startDate;
+        wbs.endDate = endDate;
+        console.log(`[D3 Gantt] Level 2 WBS: ${path}, date range: ${wbs.startDate?.toISOString()} to ${wbs.endDate?.toISOString()}`);
+    });
+    
+    // Calculate date ranges for Level 1 WBS nodes from their tasks and children
+    wbsLevel1Items.forEach((wbs, path) => {
+        // Start with dates from direct tasks
+        let startDate = wbs.tasks && wbs.tasks.length > 0 ? findEarliestStartDate(wbs.tasks) : null;
+        let endDate = wbs.tasks && wbs.tasks.length > 0 ? findLatestEndDate(wbs.tasks) : null;
+        
+        // Include dates from Level 2 children
+        if (wbs.children && wbs.children.length > 0) {
+            wbs.children.forEach(childPath => {
+                if (wbsLevel2Items.has(childPath)) {
+                    const childWbs = wbsLevel2Items.get(childPath);
+                    if (childWbs.startDate && (!startDate || childWbs.startDate < startDate)) {
+                        startDate = childWbs.startDate;
+                    }
+                    if (childWbs.endDate && (!endDate || childWbs.endDate > endDate)) {
+                        endDate = childWbs.endDate;
+                    }
+                }
+            });
+        }
+        
+        wbs.startDate = startDate;
+        wbs.endDate = endDate;
+        console.log(`[D3 Gantt] Level 1 WBS: ${path}, date range: ${wbs.startDate?.toISOString()} to ${wbs.endDate?.toISOString()}`);
+    });
+}
+
+// Function to populate WBS filter dropdown
+function populateWbsFilterDropdown(tasks) {
+    const wbsLevelFilter = document.getElementById('wbsLevelFilter');
+    if (!wbsLevelFilter) {
+        console.error("[D3 Gantt] WBS filter dropdown not found");
+        return;
+    }
+    
+    // Clear existing options except "All Tasks"
+    while (wbsLevelFilter.options.length > 1) {
+        wbsLevelFilter.remove(1);
+    }
+    
+    // Find all second-level WBS items
+    const secondLevelWbs = new Set();
+    
+    tasks.forEach(task => {
+        if (task.is_wbs && task.wbs_path) {
+            const segments = task.wbs_path.split(' > ');
+            if (segments.length === 2) {
+                secondLevelWbs.add(segments[1]);
+            }
+        }
+    });
+    
+    // Convert to array and sort alphabetically
+    const sortedWbsItems = Array.from(secondLevelWbs).sort();
+    
+    // Add options to dropdown
+    sortedWbsItems.forEach(wbsItem => {
+        const option = document.createElement('option');
+        option.value = wbsItem;
+        option.textContent = wbsItem;
+        wbsLevelFilter.appendChild(option);
+    });
+    
+    console.log(`[D3 Gantt] Populated WBS filter with ${sortedWbsItems.length} items`);
+    
+    // Add event listeners for filter buttons
+    const applyWbsFilterBtn = document.getElementById('applyWbsFilter');
+    const resetWbsFilterBtn = document.getElementById('resetWbsFilter');
+    
+    if (applyWbsFilterBtn) {
+        // Remove existing listener if any
+        const oldApplyListener = applyWbsFilterBtn._mainFilterListener; // Use a unique property name
+        if (oldApplyListener) {
+            applyWbsFilterBtn.removeEventListener('click', oldApplyListener);
+        }
+        
+        // Add new listener
+        const applyListener = () => {
+            const selectedValue = wbsLevelFilter.value;
+            console.log(`[Main Filter] Applying WBS filter: ${selectedValue}`);
+            // Apply to Gantt
+            applyWbsFilter(selectedValue);
+        };
+        
+        applyWbsFilterBtn.addEventListener('click', applyListener);
+        applyWbsFilterBtn._mainFilterListener = applyListener; // Store with unique name
+    }
+    
+    if (resetWbsFilterBtn) {
+        // Remove existing listener if any
+        const oldResetListener = resetWbsFilterBtn._mainFilterListener; // Use a unique property name
+        if (oldResetListener) {
+            resetWbsFilterBtn.removeEventListener('click', oldResetListener);
+        }
+        
+        // Add new listener
+        const resetListener = () => {
+            wbsLevelFilter.value = 'all';
+            console.log('[Main Filter] Resetting WBS filter');
+            // Reset Gantt
+            applyWbsFilter('all');
+        };
+        
+        resetWbsFilterBtn.addEventListener('click', resetListener);
+        resetWbsFilterBtn._mainFilterListener = resetListener; // Store with unique name
+    }
+}
+
+// Function to apply WBS filter
+function applyWbsFilter(selectedWbs) {
+    if (!state.lastGanttData || !state.wbsHierarchy) {
+        console.error("[D3 Gantt] No data to filter");
+        return;
+    }
+    
+    console.log(`[D3 Gantt] Applying WBS filter: ${selectedWbs}`);
+    
+    if (selectedWbs === 'all') {
+        // Show all tasks - reprocess with current expansion state
+        const hierarchicalTasks = createTaskHierarchyWithAggregation(state.lastGanttData, state.wbsHierarchy);
+        state.ganttData = hierarchicalTasks;
+        renderD3Gantt(state.ganttData);
+        return;
+    }
+    
+    // Trim spaces from the selected WBS value
+    const trimmedSelectedWbs = selectedWbs.trim();
+    console.log(`[D3 Gantt] Trimmed WBS filter value: "${trimmedSelectedWbs}"`);
+    
+    // Find the selectedWbs in the raw data to get its full wbs_path and level
+    let selectedWbsPath = null;
+    let selectedWbsLevel = null;
+    
+    // Loop through tasks to find the selected WBS item
+    for (const task of state.lastGanttData) {
+        if (!task.wbs_path) continue;
+        
+        const segments = task.wbs_path.split(' > ');
+        
+        // Check if any segment matches the selected WBS value
+        const matchingSegmentIndex = segments.findIndex(segment => segment.trim() === trimmedSelectedWbs);
+        
+        if (matchingSegmentIndex >= 0) {
+            // Found a match! Build the path up to this segment
+            selectedWbsPath = segments.slice(0, matchingSegmentIndex + 1).join(' > ');
+            selectedWbsLevel = matchingSegmentIndex; // 0-based level
+            console.log(`[D3 Gantt] Found matching WBS path: "${selectedWbsPath}" at level ${selectedWbsLevel}`);
+            break;
+        }
+    }
+    
+    // If we couldn't find the WBS, show an error
+    if (!selectedWbsPath) {
+        console.error(`[D3 Gantt] Could not find WBS path for "${trimmedSelectedWbs}"`);
+        const ganttContainer = document.getElementById("d3GanttChart");
+        if (ganttContainer) {
+            ganttContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-64">
+                    <div class="text-gray-500 text-xl mb-2">
+                        <i class="fas fa-exclamation-triangle mr-2"></i>Error
+                    </div>
+                    <p class="text-gray-700">Could not find WBS item "${selectedWbs}" in the data. Please try another filter.</p>
+                </div>
+            `;
+        }
+        return;
+    }
+    
+    console.log(`[D3 Gantt] Filtering tasks under path: "${selectedWbsPath}"`);
+    
+    // Filter tasks based on whether they start with the selected WBS path
+    const filteredTasks = state.lastGanttData.filter(task => {
+        if (!task.wbs_path) return false;
+        
+        // A task is included if its wbs_path starts with the selected path
+        return task.wbs_path.startsWith(selectedWbsPath);
+    });
+    
+    if (filteredTasks.length === 0) {
+        console.log(`[D3 Gantt] No tasks found under WBS path: "${selectedWbsPath}"`);
+        const ganttContainer = document.getElementById("d3GanttChart");
+        if (ganttContainer) {
+            ganttContainer.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-64">
+                    <div class="text-gray-500 text-xl mb-2">
+                        <i class="fas fa-search mr-2"></i>No results
+                    </div>
+                    <p class="text-gray-700">No tasks found under "${selectedWbs}".</p>
+                </div>
+            `;
+        }
+                return;
+            }
+            
+    console.log(`[D3 Gantt] Found ${filteredTasks.length} tasks under WBS path: "${selectedWbsPath}"`);
+    
+    // Create a filtered hierarchy object with only relevant paths
+    const filteredHierarchy = {};
+    
+    // First, extract all unique WBS paths from the filtered tasks
+    const allFilteredWbsPaths = new Set();
+    filteredTasks.forEach(task => {
+        if (task.wbs_path) {
+            allFilteredWbsPaths.add(task.wbs_path);
+            
+            // Also add all parent paths up to the selected level
+            const segments = task.wbs_path.split(' > ');
+            for (let i = 1; i <= segments.length; i++) {
+                const parentPath = segments.slice(0, i).join(' > ');
+                allFilteredWbsPaths.add(parentPath);
+            }
+        }
+    });
+    
+    // Add all these paths to the filtered hierarchy
+    allFilteredWbsPaths.forEach(path => {
+        if (state.wbsHierarchy[path]) {
+            filteredHierarchy[path] = state.wbsHierarchy[path];
+        }
+    });
+    
+    // Pre-expand the selected WBS path and its ancestors to ensure visibility
+    const pathSegments = selectedWbsPath.split(' > ');
+    for (let i = 1; i <= pathSegments.length; i++) {
+        const partialPath = pathSegments.slice(0, i).join(' > ');
+        const wbsId = "wbs_" + partialPath.replace(/ > /g, "_");
+        state.expandedState[wbsId] = true;
+        console.log(`[D3 Gantt] Pre-expanding: ${wbsId}`);
+    }
+    
+    // Create the hierarchical tasks with the updated state
+    const hierarchicalTasks = createTaskHierarchyWithAggregation(filteredTasks, filteredHierarchy);
+    
+    console.log(`[D3 Gantt] Rendering ${hierarchicalTasks.length} tasks in the filtered view`);
+    renderD3Gantt(hierarchicalTasks);
+}
+
+// Function to render the D3.js Gantt chart
+function renderD3Gantt(taskData) {
+    console.log(`[D3 Gantt] Rendering ${taskData.length} tasks...`);
+    
+    // Get container dimensions
+    const ganttContainer = document.getElementById("d3GanttChart");
+    if (!ganttContainer) {
+        console.error("[D3 Gantt] Container not found!");
+        return;
+    }
+    
+    // Clear existing content
+    ganttContainer.innerHTML = "";
+    
+    // Process tasks to add expanded/collapsed states if not already present
+    taskData.forEach(task => {
+        if (task.is_wbs && task.expanded === undefined) {
+            // Default to expanded for level 1, collapsed for levels 2-4
+            task.expanded = task.wbs_level === 0;
+        }
+    });
+    
+    // Create a copy of the task data to avoid modifying the original
+    const workingTaskData = [...taskData];
+    
+    // The child task filtering is now handled within createTaskHierarchyWithAggregation
+    // We don't need to manually filter here as the hierarchy is already built correctly
+    const visibleTasks = workingTaskData;
+    
+    console.log(`[D3 Gantt] Filtered to ${visibleTasks.length} visible tasks`);
+    
+    // Get the available height from the viewport or parent container
+    const viewportHeight = window.innerHeight; 
+    const margin = {top: 40, right: 20, bottom: 40, left: 280}; // Increased left margin for task names
+    const width = ganttContainer.clientWidth - margin.left - margin.right;
+    
+    // Calculate the available height
+    const availableHeight = viewportHeight * 0.75;
+    
+    // Adjust row height to match the image
+    const rowHeight = 24; // Set fixed row height for consistent appearance
+    const rowPadding = 0.15; // Reduced padding for tighter layout
+    
+    // Calculate total height needed
+    const height = visibleTasks.length * rowHeight;
+    
+    console.log(`[D3 Gantt] Using row height: ${rowHeight.toFixed(2)}px with padding ${rowPadding.toFixed(2)}`);
+    
+    // Fixed font size for uniform appearance
+    const fontSize = 12;
+    
+    // Create SVG element with the calculated dimensions
+    const svg = d3.select("#d3GanttChart")
+        .append("svg")
+        .attr("width", ganttContainer.clientWidth)
+        .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", `translate(${margin.left},${margin.top})`);
+    
+    // Create defs for clipping
+    const defs = svg.append("defs");
+    defs.append("clipPath")
+        .attr("id", "clip")
+        .append("rect")
+        .attr("width", width)
+        .attr("height", height);
+    
+    // Add pattern for progress bar
+    defs.append("pattern")
+        .attr("id", "progressPattern")
+        .attr("patternUnits", "userSpaceOnUse")
+        .attr("width", 4)
+        .attr("height", 4)
+        .attr("patternTransform", "rotate(45)")
+        .append("rect")
+        .attr("width", 2)
+        .attr("height", 4)
+        .attr("fill", "#4299E1");
+    
+    // Add zoom behavior
+    const zoom = d3.zoom()
+        .scaleExtent([0.5, 10])
+        .extent([[0, 0], [width, height]])
+        .on("zoom", zoomed);
+    
+    // Add zoom rect
+    const zoomRect = svg.append("rect")
+        .attr("width", width)
+        .attr("height", height)
+        .attr("fill", "none")
+        .attr("pointer-events", "all")
+        .call(zoom);
+    
+    // Create tooltip div
+    const tooltip = d3.select("#d3GanttChart")
+        .append("div")
+        .attr("class", "gantt-tooltip")
+        .style("opacity", 0)
+        .style("visibility", "hidden") // Add initial hidden visibility
+        .style("position", "fixed") 
+        .style("z-index", "1000")
+        .style("background", "white")
+        .style("border", "1px solid #ccc")
+        .style("border-radius", "4px")
+        .style("padding", "8px")
+        .style("font-size", "12px")
+        .style("pointer-events", "none")
+        .style("box-shadow", "0 4px 6px rgba(0, 0, 0, 0.1)")
+        .style("max-width", "300px");
+    
+    // Create main group for chart elements
+    const chart = svg.append("g")
+        .attr("class", "chart-content")
+        .attr("clip-path", "url(#clip)");
+    
+    // Find min and max dates for the time scale
+    let minDate = d3.min(taskData, d => {
+        const date = d.start_date ? new Date(d.start_date) : null;
+        return date && !isNaN(date.getTime()) ? date : null;
+    });
+    
+    let maxDate = d3.max(taskData, d => {
+        const date = d.end_date ? new Date(d.end_date) : null;
+        return date && !isNaN(date.getTime()) ? date : null;
+    });
+    
+    // Add buffer to both ends
+    if (minDate && maxDate) {
+        const timeRange = maxDate - minDate;
+        minDate = new Date(minDate.getTime() - timeRange * 0.05);
+        maxDate = new Date(maxDate.getTime() + timeRange * 0.05);
+    } else {
+        // Fallback if dates are not valid
+        minDate = new Date();
+        maxDate = new Date(minDate.getTime() + 30 * 24 * 60 * 60 * 1000); // Add 30 days
+    }
+    
+    // Create time scale
+    const timeScale = d3.scaleTime()
+        .domain([minDate, maxDate])
+        .range([0, width]);
+    
+    // Create task scale (y-axis) with dynamic padding
+    const taskScale = d3.scaleBand()
+        .domain(visibleTasks.map(d => d.task_id))
+        .range([0, height])
+        .padding(rowPadding);
+    
+    // Create axes
+    const xAxis = d3.axisTop(timeScale)
+        .tickFormat(d3.timeFormat("%d %b"))
+        .tickSize(-height); // Make grid lines extend full height
+    
+    // Add x-axis at the top with grid lines
+    const xAxisGroup = svg.append("g")
+        .attr("class", "gantt-axis gantt-axis-x")
+        .attr("transform", `translate(0, 0)`)
+        .call(xAxis);
+    
+    // Style grid lines
+    xAxisGroup.selectAll(".tick line")
+        .attr("stroke", "#e5e7eb")
+        .attr("stroke-dasharray", "2,2");
+    
+    // Style axis labels
+    xAxisGroup.selectAll("text")
+        .style("text-anchor", "middle")
+        .style("font-size", "10px")
+        .style("font-weight", "normal")
+        .style("fill", "#6B7280");
+    
+    // Add light horizontal grid lines
+    chart.append("g")
+        .attr("class", "gantt-grid")
+        .selectAll("line")
+        .data(visibleTasks)
+        .enter()
+        .append("line")
+        .attr("x1", 0)
+        .attr("x2", width)
+        .attr("y1", d => taskScale(d.task_id) + taskScale.bandwidth())
+        .attr("y2", d => taskScale(d.task_id) + taskScale.bandwidth())
+        .attr("stroke", "#f3f4f6")
+        .attr("stroke-width", 1);
+    
+    // Add alternating row background colors
+    chart.selectAll(".row-background")
+        .data(visibleTasks)
+        .enter()
+        .append("rect")
+        .attr("class", "row-background")
+        .attr("x", 0)
+        .attr("y", d => taskScale(d.task_id))
+        .attr("width", width)
+        .attr("height", taskScale.bandwidth())
+        .attr("fill", (d, i) => i % 2 === 0 ? "#ffffff" : "#f9fafb")
+        .attr("rx", 0)
+        .attr("ry", 0);
+    
+    // Add task bars
+    chart.selectAll(".gantt-task-bar")
+        .data(visibleTasks.filter(d => {
+            // Filter out tasks without valid dates
+            const startDate = d.start_date ? new Date(d.start_date) : null;
+            const endDate = d.end_date ? new Date(d.end_date) : null;
+            return startDate && endDate && !isNaN(startDate.getTime()) && !isNaN(endDate.getTime());
+        }))
+        .enter()
+        .append("rect")
+        .attr("class", d => {
+            let classes = "gantt-task-bar";
+            if (d.target_drtn_hr_cnt === 0) classes += " gantt-milestone";
+            else if (d.is_wbs && d.is_level1) classes += " gantt-level1";
+            else if (d.is_wbs && d.is_level2) classes += " gantt-level2";
+            else if (d.is_wbs && d.is_level3) classes += " gantt-level3";
+            else if (d.is_wbs && d.is_level4) classes += " gantt-level4";
+            else if (d.driving_path_flag === 'Y') classes += " gantt-critical";
+            else classes += " gantt-task";
+            return classes;
+        })
+        .attr("x", d => timeScale(new Date(d.start_date)))
+        .attr("y", d => taskScale(d.task_id) + taskScale.bandwidth() * 0.2) // Adjusted to center bars
+        .attr("width", d => {
+            const startDate = new Date(d.start_date);
+            const endDate = new Date(d.end_date);
+            return Math.max(timeScale(endDate) - timeScale(startDate), d.target_drtn_hr_cnt === 0 ? 8 : 2);
+        })
+        .attr("height", taskScale.bandwidth() * 0.6) // Thinner bars
+        .attr("rx", 2) // Rounded corners
+        .attr("ry", 2)
+        .attr("fill", d => {
+            if (d.is_wbs && d.is_level1) return "#2563EB"; // Dark blue for WBS level 1
+            else if (d.is_wbs && d.is_level2) return "#3B82F6"; // Medium blue for level 2
+            else if (d.is_wbs && d.is_level3) return "#60A5FA"; // Lighter blue for level 3
+            else if (d.is_wbs && d.is_level4) return "#93C5FD"; // Even lighter blue for level 4
+            else if (d.driving_path_flag === 'Y') return "#DC2626"; // Red for critical path
+            else return "#4299E1"; // Standard blue for regular tasks
+        })
+        .attr("stroke", d => {
+            if (d.is_wbs && d.is_level1) return "#1E40AF"; // Darker blue border
+            else if (d.is_wbs && d.is_level2) return "#1D4ED8"; 
+            else if (d.is_wbs && d.is_level3) return "#2563EB";
+            else if (d.is_wbs && d.is_level4) return "#3B82F6";
+            else if (d.driving_path_flag === 'Y') return "#B91C1C"; // Darker red border
+            else return "#2563EB"; // Standard blue border
+        })
+        .attr("stroke-width", 1)
+        .on("mouseover", function(event, d) {
+            d3.select(this)
+                .attr("stroke-width", 2);
+                
+            tooltip.transition()
+                .duration(200)
+                .style("opacity", 0.98)
+                .style("visibility", "visible");
+            
+            // Add debug log to see available data
+            console.log("[Tooltip] Task data:", {
+                id: d.task_id,
+                name: d.task_name,
+                start_date: d.start_date,
+                end_date: d.end_date,
+                is_wbs: d.is_wbs,
+                wbs_level: d.wbs_level,
+                has_critical_tasks: d.has_critical_tasks,
+                child_paths: d.child_paths,
+                task_count: d.task_count,
+                aggregated_tasks: d.aggregated_tasks ? d.aggregated_tasks.length : 0
+            });
+            
+            // Format date helper function
+            const formatDate = (dateStr) => {
+                if (!dateStr) return "N/A";
+                try {
+                    const date = new Date(dateStr);
+                    if (isNaN(date.getTime())) return "N/A";
+                    return date.toLocaleDateString(undefined, { 
+                        year: 'numeric', 
+                        month: 'short', 
+                        day: 'numeric'
+                    });
+                } catch (e) {
+                    return "N/A";
+                }
+            };
+                
+            let html = "";
+            let headerStyle = "style='margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid #eee; font-weight: bold;'";
+            
+            if (d.is_wbs && (d.is_level2 || d.is_level3 || d.is_level4 || d.is_level1)) {
+                // WBS Level 1-4 tooltip
+                const levelNum = d.is_level1 ? 1 : d.is_level2 ? 2 : d.is_level3 ? 3 : 4;
+                const levelColor = d.is_level1 ? "#2563EB" : d.is_level2 ? "#3B82F6" : d.is_level3 ? "#60A5FA" : "#93C5FD";
+                headerStyle = `style='margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid ${levelColor}; color: ${levelColor}; font-weight: bold;'`;
+                html += `<div ${headerStyle}>WBS Level ${levelNum}: ${d.task_name || "N/A"}</div>`;
+                html += `<div style='display: grid; grid-template-columns: 110px auto; gap: 4px;'>`;
+                // Find child tasks for this WBS
+                let childTasks = [];
+                if (d.aggregated_tasks && d.aggregated_tasks.length > 0) {
+                    childTasks = d.aggregated_tasks;
+                } else if (state.lastGanttData) {
+                    childTasks = state.lastGanttData.filter(t => t.wbs_path && t.wbs_path.startsWith(d.wbs_path) && !t.is_wbs);
+                }
+                if (childTasks.length > 0) {
+                    const minStart = childTasks.reduce((min, t) => t.start_date && (!min || new Date(t.start_date) < new Date(min)) ? t.start_date : min, null);
+                    const maxEnd = childTasks.reduce((max, t) => t.end_date && (!max || new Date(t.end_date) > new Date(max)) ? t.end_date : max, null);
+                    html += `<div><b>Start Date:</b></div><div>${formatDate(minStart)}</div>`;
+                    html += `<div><b>End Date:</b></div><div>${formatDate(maxEnd)}</div>`;
+                    if (minStart && maxEnd) {
+                        const start = new Date(minStart);
+                        const end = new Date(maxEnd);
+                        const durationDays = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+                        html += `<div><b>Duration:</b></div><div>${durationDays} days</div>`;
+                    } else {
+                        html += `<div><b>Duration:</b></div><div>N/A</div>`;
+                    }
+                } else {
+                    html += `<div><b>Start Date:</b></div><div>N/A</div>`;
+                    html += `<div><b>End Date:</b></div><div>N/A</div>`;
+                    html += `<div><b>Duration:</b></div><div>N/A</div>`;
+                }
+                html += `</div>`;
+                html += `<div style='display: grid; grid-template-columns: 80px auto; gap: 4px;'>`;
+                html += `<div><b>Tasks:</b></div><div>${d.task_count || 0}</div>`;
+                html += `<div><b>Start:</b></div><div>${formatDate(d.start_date)}</div>`;
+                html += `<div><b>End:</b></div><div>${formatDate(d.end_date)}</div>`;
+                
+                // Calculate duration in days if dates are valid
+                if (d.start_date && d.end_date) {
+                    const startDate = new Date(d.start_date);
+                    const endDate = new Date(d.end_date);
+                    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                        const durationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+                        html += `<div><b>Duration:</b></div><div>${durationDays} days</div>`;
+                    }
+                }
+                
+                html += `</div>`;
+                
+                // Add top 2 child tasks if available
+                if (d.aggregated_tasks && d.aggregated_tasks.length > 0) {
+                    html += `<div style='margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e5e7eb;'>`;
+                    html += `<div style='font-weight: bold; margin-bottom: 4px;'>Top Tasks:</div>`;
+                    
+                    // Sort tasks by date and take top 2
+                    const sortedTasks = [...d.aggregated_tasks].sort((a, b) => {
+                        const aDate = a.start_date ? new Date(a.start_date) : null;
+                        const bDate = b.start_date ? new Date(b.start_date) : null;
+                        if (!aDate) return 1;
+                        if (!bDate) return -1;
+                        return aDate - bDate;
+                    }).slice(0, 2);
+                    
+                    sortedTasks.forEach((task, i) => {
+                        html += `<div style='padding: 3px 0; ${i > 0 ? "border-top: 1px dotted #f0f0f0;" : ""}'>`;
+                        html += `<div style='font-weight: 500;'>${task.task_name || 'Unnamed Task'}</div>`;
+                        html += `<div style='display: grid; grid-template-columns: 60px auto; gap: 2px; font-size: 11px;'>`;
+                        html += `<div><b>Start:</b></div><div>${formatDate(task.start_date)}</div>`;
+                        html += `<div><b>End:</b></div><div>${formatDate(task.end_date)}</div>`;
+                        html += `</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    html += `</div>`;
+                } else if (d.child_paths && d.child_paths.length > 0) {
+                    html += `<div style='margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e5e7eb;'>`;
+                    html += `<div style='font-weight: bold; margin-bottom: 4px;'>Contains ${d.child_paths.length} child WBS items</div>`;
+                    
+                    // Get the top 2 child paths
+                    d.child_paths.slice(0, 2).forEach((childPath, i) => {
+                        // Extract the name from the path (last segment)
+                        const pathParts = childPath.split(' > ');
+                        const childName = pathParts[pathParts.length - 1];
+                        
+                        html += `<div style='padding: 3px 0; ${i > 0 ? "border-top: 1px dotted #f0f0f0;" : ""}'>`;
+                        html += `<div style='font-weight: 500;'>${childName}</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    html += `</div>`;
+                }
+                
+                // Show critical task indicator with better styling
+                if (d.has_critical_tasks) {
+                    html += `<div style='margin-top: 6px; padding: 4px; background-color: #FECACA; color: #B91C1C; border-radius: 3px; font-weight: bold; text-align: center;'>Contains Critical Tasks</div>`;
+                }
+            } else if (d.is_wbs && d.is_level1) {
+                // WBS Level 1 tooltip
+                const levelColor = "#2563EB";
+                headerStyle = `style='margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid ${levelColor}; color: ${levelColor}; font-weight: bold;'`;
+                
+                html += `<div ${headerStyle}>WBS Level 1: ${d.task_name || "N/A"}</div>`;
+                html += `<div style='display: grid; grid-template-columns: 80px auto; gap: 4px;'>`;
+                html += `<div><b>Start:</b></div><div>${formatDate(d.start_date)}</div>`;
+                html += `<div><b>End:</b></div><div>${formatDate(d.end_date)}</div>`;
+                
+                // Calculate duration in days if dates are valid
+                if (d.start_date && d.end_date) {
+                    const startDate = new Date(d.start_date);
+                    const endDate = new Date(d.end_date);
+                    if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+                        const durationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+                        html += `<div><b>Duration:</b></div><div>${durationDays} days</div>`;
+                    }
+                }
+                
+                // Add children count
+                if (d.children && d.children.length > 0) {
+                    html += `<div><b>Children:</b></div><div>${d.children.length} WBS items</div>`;
+                } else if (d.child_paths && d.child_paths.length > 0) {
+                    html += `<div><b>Children:</b></div><div>${d.child_paths.length} WBS items</div>`;
+                }
+                
+                html += `</div>`;
+                
+                // Add top 2 child WBS if available
+                if (d.children && d.children.length > 0) {
+                    html += `<div style='margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e5e7eb;'>`;
+                    html += `<div style='font-weight: bold; margin-bottom: 4px;'>Top Child WBS:</div>`;
+                    
+                    d.children.slice(0, 2).forEach((child, i) => {
+                        html += `<div style='padding: 3px 0; ${i > 0 ? "border-top: 1px dotted #f0f0f0;" : ""}'>`;
+                        html += `<div style='font-weight: 500;'>${child}</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    html += `</div>`;
+                } else if (d.child_paths && d.child_paths.length > 0) {
+                    html += `<div style='margin-top: 8px; padding-top: 6px; border-top: 1px dashed #e5e7eb;'>`;
+                    html += `<div style='font-weight: bold; margin-bottom: 4px;'>Top Child WBS:</div>`;
+                    
+                    d.child_paths.slice(0, 2).forEach((child, i) => {
+                        // Get just the last part of the path for display
+                        const pathParts = child.split(' > ');
+                        const displayName = pathParts[pathParts.length - 1];
+                        
+                        html += `<div style='padding: 3px 0; ${i > 0 ? "border-top: 1px dotted #f0f0f0;" : ""}'>`;
+                        html += `<div style='font-weight: 500;'>${displayName}</div>`;
+                        html += `</div>`;
+                    });
+                    
+                    html += `</div>`;
+                }
+            } else if (d.target_drtn_hr_cnt === 0) {
+                // Milestone tooltip
+                const isCritical = d.driving_path_flag === 'Y';
+                const headerColor = isCritical ? "#DC2626" : "#4338CA";
+                headerStyle = `style='margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid ${headerColor}; color: ${headerColor}; font-weight: bold;'`;
+                
+                html += `<div ${headerStyle}>Milestone: ${d.task_name || "N/A"}</div>`;
+                html += `<div style='display: grid; grid-template-columns: 80px auto; gap: 4px;'>`;
+                html += `<div><b>ID:</b></div><div>${d.task_id || "N/A"}</div>`;
+                html += `<div><b>Date:</b></div><div>${formatDate(d.start_date)}</div>`;
+                
+                if (d.status_code) {
+                    let statusColor = "#374151"; // Default color
+                    if (d.status_code.toLowerCase().includes("complet")) {
+                        statusColor = "#10B981"; // Green
+                    } else if (d.status_code.toLowerCase().includes("progress") || d.status_code.toLowerCase().includes("start")) {
+                        statusColor = "#3B82F6"; // Blue
+                    } else if (d.status_code.toLowerCase().includes("not") || d.status_code.toLowerCase().includes("plan")) {
+                        statusColor = "#9CA3AF"; // Gray
+                    }
+                    html += `<div><b>Status:</b></div><div style="color: ${statusColor}; font-weight: bold;">${d.status_code}</div>`;
+                }
+                
+                if (d.wbs_path) {
+                    html += `<div><b>WBS:</b></div><div>${d.wbs_path}</div>`;
+                }
+                html += `</div>`;
+                
+                // Critical indicator for milestone
+                if (isCritical) {
+                    html += `<div style='margin-top: 6px; padding: 4px; background-color: #FECACA; color: #B91C1C; border-radius: 3px; font-weight: bold; text-align: center;'>Critical Milestone</div>`;
+                }
+            } else {
+                // Regular task tooltip
+                const isCritical = d.driving_path_flag === 'Y';
+                const headerColor = isCritical ? "#DC2626" : "#4299E1";
+                headerStyle = `style='margin-bottom: 8px; padding-bottom: 5px; border-bottom: 1px solid ${headerColor}; color: ${headerColor}; font-weight: bold;'`;
+                html += `<div ${headerStyle}>Task: ${d.task_name || "N/A"}</div>`;
+                html += `<div style='display: grid; grid-template-columns: 110px auto; gap: 4px;'>`;
+                html += `<div><b>Start Date:</b></div><div>${formatDate(d.start_date)}</div>`;
+                html += `<div><b>End Date:</b></div><div>${formatDate(d.end_date)}</div>`;
+                html += `<div><b>Task Status:</b></div><div>${d.status_code || "N/A"}</div>`;
+                html += `<div><b>Is Critical:</b></div><div>${isCritical ? "Yes" : "No"}</div>`;
+                if (d.target_drtn_hr_cnt !== undefined) {
+                    const hours = d.target_drtn_hr_cnt;
+                    const days = Math.ceil(hours / 8); // Assuming 8-hour workdays
+                    html += `<div><b>Duration:</b></div><div>${days} day${days !== 1 ? 's' : ''} (${hours} hours)</div>`;
+                } else {
+                    html += `<div><b>Duration:</b></div><div>N/A</div>`;
+                }
+                html += `<div><b>WBS:</b></div><div>${d.wbs_path || "N/A"}</div>`;
+                html += `</div>`;
+            }
+            
+            // Update tooltip content
+            tooltip.html(html || `<div style='padding: 8px;'><b>${d.task_name || d.task_id || "Task"}</b><br>Missing complete data</div>`);
+            
+            // Position the tooltip relative to the mouse pointer
+            // Get container bounds to avoid positioning outside the viewport
+            const chartBounds = document.getElementById("d3GanttChart").getBoundingClientRect();
+            const tooltipNode = tooltip.node();
+            if (tooltipNode) {
+                const tooltipWidth = tooltipNode.offsetWidth;
+                const tooltipHeight = tooltipNode.offsetHeight;
+                
+                // Default position (right of cursor)
+                let left = event.clientX + 15;
+                let top = event.clientY - 10;
+                
+                // Adjust if tooltip would extend beyond right edge
+                if (left + tooltipWidth > chartBounds.right - 10) {
+                    left = event.clientX - tooltipWidth - 10; // Position to the left of cursor
+                }
+                
+                // Adjust if tooltip would extend beyond bottom edge
+                if (top + tooltipHeight > chartBounds.bottom - 10) {
+                    top = chartBounds.bottom - tooltipHeight - 10;
+                }
+                
+                // Adjust if tooltip would extend beyond top edge
+                if (top < chartBounds.top + 10) {
+                    top = chartBounds.top + 10;
+                }
+                
+                // Apply the calculated position
+                tooltip
+                    .style("left", `${left}px`)
+                    .style("top", `${top}px`);
+            }
+        })
+        .on("mouseout", function(d) {
+            d3.select(this)
+                .attr("stroke-width", 1);
+                
+            tooltip.transition()
+                .duration(300)
+                .style("opacity", 0)
+                .style("visibility", "hidden"); // Add hidden visibility
+        })
+        .on("click", function(event, d) {
+            // Toggle expansion state for expandable items
+            if (d.is_wbs && (d.is_level2 || d.is_level3 || d.is_level4)) {
+                // Toggle expanded state using our central function
+                toggleWbsExpansion(d.task_id, !d.expanded);
+            }
+        });
+    
+    // Add progress indicators (diagonal pattern fill) - simulating image appearance
+    chart.selectAll(".gantt-progress")
+        .data(visibleTasks.filter(d => {
+            // Filter out tasks without valid dates and only include regular tasks (not WBS)
+            const startDate = d.start_date ? new Date(d.start_date) : null;
+            const endDate = d.end_date ? new Date(d.end_date) : null;
+            return startDate && endDate && !isNaN(startDate.getTime()) && !isNaN(endDate.getTime()) 
+                && !d.is_wbs && d.status_code && (d.status_code === 'In-progress' || d.status_code === 'Started');
+        }))
+        .enter()
+        .append("rect")
+        .attr("class", "gantt-progress")
+        .attr("x", d => timeScale(new Date(d.start_date)))
+        .attr("y", d => taskScale(d.task_id) + taskScale.bandwidth() * 0.2)
+        .attr("width", d => {
+            const startDate = new Date(d.start_date);
+            const endDate = new Date(d.end_date);
+            const fullWidth = timeScale(endDate) - timeScale(startDate);
+            // Simulate random progress between 30-80%
+            const progress = (d.task_id.charCodeAt(0) % 5 + 3) / 10; // Use char code to get a stable "random" value
+            return fullWidth * progress;
+        })
+        .attr("height", taskScale.bandwidth() * 0.6)
+        .attr("fill", "url(#progressPattern)")
+        .attr("rx", 2)
+        .attr("ry", 2)
+        .attr("pointer-events", "none"); // Don't interfere with bar clicks
+    
+    // Add milestone diamonds for zero-duration tasks
+    chart.selectAll(".milestone-diamond")
+        .data(visibleTasks.filter(d => d.target_drtn_hr_cnt === 0))
+        .enter()
+        .append("polygon")
+        .attr("class", "milestone-diamond")
+        .attr("points", d => {
+            const x = timeScale(new Date(d.start_date));
+            const y = taskScale(d.task_id) + taskScale.bandwidth() / 2;
+            const size = 8;
+            return `${x},${y-size} ${x+size},${y} ${x},${y+size} ${x-size},${y}`;
+        })
+        .attr("fill", d => d.driving_path_flag === 'Y' ? "#DC2626" : "#4338CA")
+        .attr("stroke", d => d.driving_path_flag === 'Y' ? "#B91C1C" : "#3730A3")
+        .attr("stroke-width", 1.5);
+    
+    // Calculate indent based on WBS level for task labels
+    const getIndent = (d) => {
+        if (d.is_wbs && d.is_level1) return 10;
+        if (d.is_wbs && d.is_level2) return 25;
+        if (d.is_wbs && d.is_level3) return 40;
+        if (d.is_wbs && d.is_level4) return 55;
+        
+        // For tasks, indent based on parent level
+        if (d.parent_level4) return 70;
+        if (d.parent_level3) return 55;
+        if (d.parent_level2) return 40;
+        if (d.parent_level1) return 25;  // Added indentation for tasks under level 1
+        return 15;
+    };
+    
+    // Create custom y-axis with task labels
+    const customYAxis = svg.append("g")
+        .attr("class", "custom-y-axis")
+        .attr("transform", `translate(0, 0)`);
+    
+    // Row background for labels area
+    customYAxis.selectAll(".label-row-bg")
+        .data(visibleTasks)
+        .enter()
+        .append("rect")
+        .attr("class", "label-row-bg")
+        .attr("x", -margin.left)
+        .attr("y", d => taskScale(d.task_id))
+        .attr("width", margin.left)
+        .attr("height", taskScale.bandwidth())
+        .attr("fill", (d, i) => i % 2 === 0 ? "#ffffff" : "#f9fafb");
+    
+    // Add task name labels
+    customYAxis.selectAll(".task-label")
+        .data(visibleTasks)
+        .enter()
+        .append("text")
+        .attr("class", d => {
+            if (d.is_wbs) return "wbs-label";
+            else if (d.driving_path_flag === 'Y') return "critical-task-label";
+            else return "task-label";
+        })
+        .attr("x", d => -margin.left + getIndent(d))
+        .attr("y", d => taskScale(d.task_id) + taskScale.bandwidth() / 2)
+        .attr("dominant-baseline", "middle")
+        .attr("text-anchor", "start")
+        .attr("font-size", d => d.is_wbs ? "12px" : "11px")
+        .attr("font-weight", d => d.is_wbs ? "bold" : "normal")
+        .attr("fill", d => {
+            if (d.is_wbs) return "#1E40AF";
+            else if (d.driving_path_flag === 'Y') return "#DC2626";
+            else return "#374151";
+        })
+        .text(d => {
+            let text = d.task_name || '';
+            if (d.is_wbs && d.task_count) {
+                text = `${text}`;
+            }
+            const maxLength = 32;
+            return text.length > maxLength ? text.substring(0, maxLength-2) + '...' : text;
+        })
+        .append("title") // Add full name as tooltip
+        .text(d => d.task_name);
+    
+    // Add WBS expand/collapse buttons
+    customYAxis.selectAll(".expand-btn")
+        .data(visibleTasks.filter(d => d.is_wbs && (d.is_level2 || d.is_level3 || d.is_level4)))
+        .enter()
+        .append("circle")
+        .attr("class", "expand-btn")
+        .attr("cx", d => -margin.left + getIndent(d) - 12)
+        .attr("cy", d => taskScale(d.task_id) + taskScale.bandwidth() / 2)
+        .attr("r", 6)
+        .attr("fill", "#f3f4f6")
+        .attr("stroke", "#d1d5db")
+        .attr("stroke-width", 1)
+        .attr("cursor", "pointer")
+        .on("click", function(event, d) {
+            // Use the central toggle function
+            event.stopPropagation(); // Prevent bubbling to parent elements
+            toggleWbsExpansion(d.task_id, !d.expanded);
+        });
+    
+    // Add +/- symbols to buttons
+    customYAxis.selectAll(".expand-btn-symbol")
+        .data(visibleTasks.filter(d => d.is_wbs && (d.is_level2 || d.is_level3 || d.is_level4)))
+        .enter()
+        .append("text")
+        .attr("class", "expand-btn-symbol")
+        .attr("x", d => -margin.left + getIndent(d) - 12)
+        .attr("y", d => taskScale(d.task_id) + taskScale.bandwidth() / 2)
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "central")
+        .attr("font-size", "10px")
+        .attr("fill", "#6B7280")
+        .attr("pointer-events", "none")
+        .text(d => d.expanded ? "−" : "+");
+    
+    // Add task IDs in a column
+    customYAxis.selectAll(".task-id")
+        .data(visibleTasks.filter(d => !d.is_wbs)) // Only for tasks, not WBS items
+        .enter()
+        .append("text")
+        .attr("class", "task-id")
+        .attr("x", -margin.left + 5) // Fixed position at the start of label area
+        .attr("y", d => taskScale(d.task_id) + taskScale.bandwidth() / 2)
+        .attr("dominant-baseline", "middle")
+        .attr("text-anchor", "start")
+        .attr("font-size", "9px")
+        .attr("fill", "#6B7280")
+        .text(d => {
+            // Extract actual ID or code from task_id
+            const idMatch = d.task_id ? d.task_id.match(/\d+/) : null;
+            return idMatch ? idMatch[0] : '';
+        });
+    
+    // Add column divider line
+    customYAxis.append("line")
+        .attr("x1", -margin.left / 2)
+        .attr("x2", -margin.left / 2)
+        .attr("y1", 0)
+        .attr("y2", height)
+        .attr("stroke", "#e5e7eb")
+        .attr("stroke-width", 1);
+    
+    // Add today line
+    const today = new Date();
+    if (today >= minDate && today <= maxDate) {
+        chart.append("line")
+            .attr("class", "today-line")
+            .attr("x1", timeScale(today))
+            .attr("x2", timeScale(today))
+            .attr("y1", 0)
+            .attr("y2", height)
+            .attr("stroke", "#EF4444")
+            .attr("stroke-width", 1.5)
+            .attr("stroke-dasharray", "5,3");
+            
+        // Add "Today" label
+        chart.append("text")
+            .attr("x", timeScale(today))
+            .attr("y", 15)
+            .attr("text-anchor", "middle")
+            .attr("font-size", "10px")
+            .attr("fill", "#EF4444")
+            .attr("font-weight", "bold")
+            .text("Today");
+    }
+    
+    // Add small date labels at the end of bars for better readability
+    chart.selectAll(".date-label")
+        .data(visibleTasks.filter(d => {
+            // Only add date labels to expanded WBS items and critical tasks
+            return (d.is_wbs && d.expanded) || d.driving_path_flag === 'Y';
+        }))
+        .enter()
+        .append("text")
+        .attr("class", "date-label")
+        .attr("x", d => {
+            const endDate = new Date(d.end_date);
+            return timeScale(endDate) + 5; // Position just after the bar
+        })
+        .attr("y", d => taskScale(d.task_id) + taskScale.bandwidth() / 2)
+        .attr("dominant-baseline", "middle")
+        .attr("font-size", "9px")
+        .attr("fill", d => d.driving_path_flag === 'Y' ? "#DC2626" : "#6B7280")
+        .text(d => {
+            const endDate = new Date(d.end_date);
+            return endDate.toLocaleDateString(undefined, {month: 'short', day: 'numeric'});
+        });
+    
+    // Add legend
+    const legend = svg.append("g")
+        .attr("class", "legend")
+        .attr("transform", `translate(${width - 280}, -30)`);
+    
+    const legendItems = [
+        { label: "WBS", color: "#3B82F6" },
+        { label: "Task", color: "#4299E1" },
+        { label: "Critical Path", color: "#DC2626" },
+        { label: "Milestone", shape: "diamond", color: "#4338CA" }
+    ];
+    
+    legendItems.forEach((item, i) => {
+        const g = legend.append("g")
+            .attr("transform", `translate(${i * 80}, 0)`);
+        
+        if (item.shape === "diamond") {
+            g.append("polygon")
+                .attr("points", "0,4 4,0 8,4 4,8")
+                .attr("transform", "translate(-4, 0)")
+                .attr("fill", item.color);
+        } else {
+            g.append("rect")
+                .attr("width", 12)
+                .attr("height", 6)
+                .attr("rx", 2)
+                .attr("ry", 2)
+                .attr("fill", item.color);
+        }
+        
+        g.append("text")
+            .attr("x", 15)
+            .attr("y", 4)
+            .attr("font-size", "9px")
+            .attr("dominant-baseline", "middle")
+            .text(item.label);
+    });
+    
+    // Zoom function
+    function zoomed(event) {
+        chart.attr("transform", event.transform);
+        
+        // Update the axes with the new transform
+        svg.select(".gantt-axis-x")
+          .call(xAxis.scale(event.transform.rescaleX(timeScale)));
+    }
+    
+    // Set the container height
+    const totalHeight = height + margin.top + margin.bottom;
+    const svgNode = d3.select("#d3GanttChart svg").node();
+    if (svgNode) {
+        svgNode.setAttribute("height", totalHeight);
+        ganttContainer.style.height = totalHeight + "px";
+    }
+    
+    // Hide loading indicator
+    showGanttLoading(false);
+}
+
+// --- Utility Functions ---
+
+// Show/hide Gantt loading indicator
+function showGanttLoading(show) {
+    console.log(`[D3 Gantt] Setting loading state: ${show ? 'Loading' : 'Complete'}`);
+    
+    // Remove existing loading elements
+    const existingLoader = document.querySelector(".gantt-loader");
+    if (existingLoader) {
+        existingLoader.remove();
+    }
+    
+    if (show) {
+        // Create a centered loading spinner
+        const ganttContainer = document.getElementById("d3GanttChart");
+        if (ganttContainer) {
+            const loader = document.createElement("div");
+            loader.className = "gantt-loader";
+            loader.style.position = "absolute";
+            loader.style.top = "50%";
+            loader.style.left = "50%";
+            loader.style.transform = "translate(-50%, -50%)";
+            loader.style.zIndex = "100";
+            loader.style.backgroundColor = "rgba(255, 255, 255, 0.8)";
+            loader.style.padding = "20px";
+            loader.style.borderRadius = "8px";
+            loader.style.boxShadow = "0 4px 6px rgba(0, 0, 0, 0.1)";
+            loader.style.display = "flex";
+            loader.style.flexDirection = "column";
+            loader.style.alignItems = "center";
+            
+            // Create spinner
+            const spinner = document.createElement("div");
+            spinner.className = "spinner";
+            spinner.style.border = "5px solid #f3f3f3";
+            spinner.style.borderTop = "5px solid #3498db";
+            spinner.style.borderRadius = "50%";
+            spinner.style.width = "50px";
+            spinner.style.height = "50px";
+            spinner.style.animation = "spin 1s linear infinite";
+            
+            // Create keyframes for spinner
+            const style = document.createElement("style");
+            style.textContent = `
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+            
+            // Create loading text
+            const text = document.createElement("div");
+            text.textContent = "Loading Gantt chart data...";
+            text.style.marginTop = "10px";
+            text.style.fontWeight = "bold";
+            
+            loader.appendChild(spinner);
+            loader.appendChild(text);
+            ganttContainer.appendChild(loader);
+        }
+    }
+}
+
+// Show error in the Gantt container
+function showGanttError(message) {
+    console.error("[D3 Gantt] Error:", message);
+    const ganttContainer = document.getElementById("d3GanttChart");
+    if (ganttContainer) {
+    ganttContainer.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full">
+                <div class="text-red-500 text-xl mb-2">
+                    <i class="fas fa-exclamation-triangle mr-2"></i>Error
+                </div>
+                <p class="text-gray-700">${message}</p>
+        </div>
+    `;
+}
+    showGanttLoading(false);
+}
+
+// --- Schedule Initialization ---
+
+// Initialize schedule with D3 Gantt
+function initScheduleWithD3Gantt() {
+    console.log("[Schedule] Initializing with D3 Gantt chart...");
+    
+    // Initialize the D3 Gantt chart
+    initializeD3Gantt();
+    
+    // Setup tab handlers
+            setupGanttTabHandlers();
+    
+    // Load projects
+    loadProjects().then(() => {
+        // Check if project is selected
+        if (state.currentProject) {
+            // Load hierarchical Gantt data
+            loadHierarchicalGanttData();
+        }
+    });
+    
+    // Setup event listeners
+    function setupGanttTabHandlers() {
+        // DOM elements
+        const projectFilter = document.getElementById("projectFilter");
+        const ganttTabBtn = document.getElementById("ganttTabBtn");
+        const criticalPathTabBtn = document.getElementById("criticalPathTabBtn");
+        const floatAnalysisTabBtn = document.getElementById("floatAnalysisTabBtn");
+        
+        // Tab panels
+        const ganttTabPanel = document.getElementById("ganttTabPanel");
+        const criticalPathTabPanel = document.getElementById("criticalPathTabPanel");
+        const floatAnalysisTabPanel = document.getElementById("floatAnalysisTabPanel");
+        
+        // Project selection change event
+        if (projectFilter) {
+            projectFilter.addEventListener("change", function() {
+                const selectedProject = this.value;
+                if (selectedProject) {
+                    // Update state
+                    state.currentProject = selectedProject;
+                    
+                    // Update project ID display
+                    const projectIdElement = document.getElementById("currentProjectId");
+                    if (projectIdElement) {
+                        projectIdElement.textContent = selectedProject;
+                    }
+                    
+                    // Update page title
+                    updatePageTitle();
+                    
+                    // Load Gantt data
+                        loadHierarchicalGanttData();
+                    
+                    // Load CPM data if float analysis tab is active
+                    if (floatAnalysisTabPanel && floatAnalysisTabPanel.style.display !== "none") {
+                        loadCPMData();
+                    }
+                }
+            });
+        }
+        
+        // Tab buttons click events
+        if (ganttTabBtn) {
+            ganttTabBtn.addEventListener("click", function() {
+                setActiveTab("gantt");
+            });
+        }
+        
+        // Removed criticalPathTabBtn listener
+        
+        if (floatAnalysisTabBtn) {
+            floatAnalysisTabBtn.addEventListener("click", function() {
+                setActiveTab("floatAnalysis");
+                
+                // Load CPM data if not already loaded for float analysis
+                if (state.currentProject && (!state.cpmData || state.cpmData.length === 0)) {
+                    loadCPMData();
+                }
+            });
+        }
+    }
+}
+
+// --- Main Document Ready Handler ---
+
+// Main initialization
+document.addEventListener("DOMContentLoaded", function() {
+    console.log("[Schedule] Document loaded, initializing schedule...");
+    
+    // Initialize state
+    window.state = {
+        currentProject: null,
+        ganttData: [],
+        cpmData: [],
+        allCriticalTasks: []
+    };
+    
+    // Initialize the schedule
+    initScheduleWithD3Gantt();
+    
+    // Set up event listeners for main page elements
+    setupEventListeners();
+});
+
+// Rest of the code remains unchanged
+// ... existing code ...
+
+// --- AWP Helper Functions (Copied from compliance.js) ---
+
+function getAWPLevelGeneric(code, mapping) {
+    if (!code) return 'Unmapped';
+    const upperCode = String(code).toUpperCase();
+    const segments = upperCode.split('-');
+    for (const [level, patterns] of Object.entries(mapping)) {
+        if (!Array.isArray(patterns)) continue;
+        for (const pattern of patterns) {
+            const upperPattern = String(pattern).toUpperCase();
+            if (segments.some(segment => segment === upperPattern)) {
+                return level;
+            }
+        }
+    }
+    return 'Unmapped';
+}
+
+function getAWPLevel1(code) { return getAWPLevelGeneric(code, AWP_LEVEL1_MAPPING); }
+function getAWPLevel2(code) { return getAWPLevelGeneric(code, AWP_LEVEL2_MAPPING); }
+function getAWPLevel3(code) { return getAWPLevelGeneric(code, AWP_LEVEL3_MAPPING); }
+function getAWPLevel4(code) { return getAWPLevelGeneric(code, AWP_LEVEL4_MAPPING); }
+function getAWPLevel5(code) { return getAWPLevelGeneric(code, AWP_LEVEL5_MAPPING); }
+function getAWPLevel6(code) { return getAWPLevelGeneric(code, AWP_LEVEL6_MAPPING); }
+
+function getProjectName(taskCode) {
+    if (!taskCode) return 'Unmapped';
+    const code = String(taskCode);
+    const projectNameRegex = /\b([a-zA-Z]{3})(\d{1,2})\b/;
+    const match = code.match(projectNameRegex);
+    if (match) {
+        const letters = match[1].toUpperCase();
+        let digits = match[2];
+        if (digits.length === 1) digits = '0' + digits;
+        return letters + digits;
+    }
+    return 'Unmapped';
+}
+
+function processTaskCode(taskCode) {
+    if (!taskCode) {
+        // Return null or a more distinct indicator of failure if needed
+        // return null;
+        return { Project: 'Unmapped', Area: 'Unmapped', DivMS: 'Unmapped', CWB: 'CWB', AreaCode: 'Unmapped', Floor: 'Unmapped', Discipline: 'Unmapped', Block: 'Unmapped' };
+    }
+    const normalizedCode = String(taskCode).toUpperCase();
+    return {
+        Project: getProjectName(taskCode),
+        Area: getAWPLevel1(normalizedCode),
+        DivMS: getAWPLevel2(normalizedCode),
+        CWB: "CWB",
+        AreaCode: getAWPLevel3(normalizedCode),
+        Floor: getAWPLevel4(normalizedCode),
+        Discipline: getAWPLevel5(normalizedCode),
+        Block: getAWPLevel6(normalizedCode)
+    };
+}
+
+// --- END Copied AWP Functions ---
+
+// --- Project Loading Function ---
+function loadProjects() {
+    console.log("[Init] Loading projects");
+    return new Promise((resolve, reject) => {
+        // Fetch projects from the API
+        fetch('/api/projects')
+            .then(response => {
+                console.log(`[Projects] Fetch status: ${response.status}`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch projects: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(projects => {
+                console.log(`[Projects] Loaded ${projects.length} projects:`, projects);
+                
+                // Populate project filter if it exists
+                if (elements.projectFilter) {
+                    console.log(`[Projects] Populating project filter dropdown`);
+                    // Clear existing options except the default
+                    while (elements.projectFilter.options.length > 0) {
+                        elements.projectFilter.remove(0);
+                    }
+                    
+                    // Add a default option
+                    const defaultOption = document.createElement('option');
+                    defaultOption.value = '';
+                    defaultOption.textContent = 'Select a project...';
+                    elements.projectFilter.appendChild(defaultOption);
+                    
+                    // Add project options
+                    projects.forEach(project => {
+                        const option = document.createElement('option');
+                        // Handle both formats: {id, name} or {project_id, project_name}
+                        option.value = project.id || project.project_id;
+                        option.textContent = project.name || project.project_name || option.value;
+                        elements.projectFilter.appendChild(option);
+                        console.log(`[Projects] Added option: ${option.textContent} (${option.value})`);
+                    });
+                    
+                    // Set the selected project from localStorage if available
+                    if (state.currentProject) {
+                        console.log(`[Projects] Setting selected project from localStorage: ${state.currentProject}`);
+                        elements.projectFilter.value = state.currentProject;
+                    } else if (projects.length > 0) {
+                        // If no project selected but we have projects, select the first one
+                        const firstProjectId = projects[0].id || projects[0].project_id;
+                        state.currentProject = firstProjectId;
+                        localStorage.setItem('selectedProjectId', state.currentProject);
+                        elements.projectFilter.value = state.currentProject;
+                        console.log(`[Projects] Auto-selected first project: ${state.currentProject}`);
+                    }
+                    
+                    // Add change listener if not already added
+                    if (!elements.projectFilter._hasChangeListener) {
+                        elements.projectFilter.addEventListener('change', function() {
+                            const selectedProjectId = this.value;
+                            state.currentProject = selectedProjectId;
+                            localStorage.setItem('selectedProjectId', selectedProjectId);
+                            console.log(`[Projects] Selected project changed to: ${selectedProjectId}`);
+                            
+                            // Update the page title
+                            updatePageTitle();
+                            
+                            // Reload data using the new combined function
+                            hierarchicalGanttConfig.currentProjectId = null; // Reset config ID to ensure reload
+                            loadAndProcessScheduleData(); // Use the new function
+                            
+                            // // Reload data if we're on the Gantt tab // OLD LOGIC
+                            // if (state.activeTab === 'gantt') {
+                            //     hierarchicalGanttConfig.currentProjectId = null;
+                            //     loadHierarchicalGanttData();
+                            // }
+                        });
+                        elements.projectFilter._hasChangeListener = true;
+                    }
+                } else {
+                    console.warn("[Projects] Project filter dropdown not found in DOM");
+                }
+                
+                // Display current project ID if that element exists
+                if (elements.currentProjectId && state.currentProject) {
+                    elements.currentProjectId.textContent = state.currentProject;
+                    console.log(`[Projects] Updated current project ID display to: ${state.currentProject}`);
+                }
+                
+                resolve(projects);
+            })
+            .catch(error => {
+                console.error("[Projects] Error loading projects:", error);
+                reject(error);
+            });
+    });
+}
+
+// --- Tab Management Function ---
+function setActiveTab(tabName) {
+    console.log(`[UI] Setting active tab: ${tabName}`);
+    state.activeTab = tabName;
+    localStorage.setItem('scheduleActiveTab', tabName);
+    
+    // Log panel and button elements for debugging
+    console.log('[UI] Tab Panels:', {
+        ganttPanel: Boolean(elements.ganttTabPanel),
+        criticalPathPanel: Boolean(elements.criticalPathTabPanel), // Added reference
+        floatAnalysisPanel: Boolean(elements.floatAnalysisTabPanel)
+    });
+    
+    // First, hide all panels and deactivate all tab buttons
+    const panels = [elements.ganttTabPanel, elements.criticalPathTabPanel, elements.floatAnalysisTabPanel]; // Added criticalPathTabPanel
+    const buttons = [elements.ganttTabBtn, elements.criticalPathTabBtn, elements.floatAnalysisTabBtn]; // Added criticalPathTabBtn
+    
+    panels.forEach(panel => {
+        if (panel) panel.style.display = 'none';
+    });
+    
+    buttons.forEach(button => {
+        if (button) {
+            button.classList.remove('border-blue-600', 'text-blue-600');
+            button.classList.add('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        }
+    });
+    
+    // Check for D3 Gantt Chart element
+    const d3GanttChart = document.getElementById('d3GanttChart');
+    
+    // Hide D3 Gantt chart if not on gantt tab
+    if (tabName !== 'gantt' && d3GanttChart) {
+        console.log('[UI] Hiding D3 Gantt Chart for non-Gantt tab');
+        d3GanttChart.style.display = 'none';
+    }
+    
+    // Then, activate just the selected tab
+    if (tabName === 'gantt') {
+        if (elements.ganttTabPanel) elements.ganttTabPanel.style.display = 'block';
+        if (elements.ganttTabBtn) {
+            elements.ganttTabBtn.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+            elements.ganttTabBtn.classList.add('border-blue-600', 'text-blue-600');
+        }
+        
+        // Show D3 Gantt chart
+        if (d3GanttChart) d3GanttChart.style.display = 'block';
+        
+        // Load Gantt data if needed (now loads both Gantt and CPM)
+            if (state.currentProject && 
+            (!hierarchicalGanttConfig.currentProjectId || hierarchicalGanttConfig.currentProjectId !== state.currentProject || !state.cpmResults)) { // Added check for cpmResults
+            console.log('[UI] Gantt tab activated, loading/reloading combined schedule data...');
+            loadAndProcessScheduleData(); // Use the combined loader
+            } else {
+            console.log('[UI] Gantt tab activated, using cached data for', {
+                ganttConfigProject: hierarchicalGanttConfig.currentProjectId,
+                stateProject: state.currentProject
+            });
+        }
+    } else if (tabName === 'criticalPath') { 
+        if (elements.criticalPathTabPanel) elements.criticalPathTabPanel.style.display = 'block';
+        if (elements.criticalPathTabBtn) {
+            elements.criticalPathTabBtn.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+            elements.criticalPathTabBtn.classList.add('border-blue-600', 'text-blue-600');
+        }
+        console.log('[UI] Activated Critical Path Tab');
+        // Load data if needed (check based on CPM data presence or project mismatch)
+        if (state.currentProject && 
+            (!state.cpmResults || hierarchicalGanttConfig.currentProjectId !== state.currentProject)) {
+            console.log('[UI] Critical Path tab activated, loading combined schedule data...');
+            loadAndProcessScheduleData(); 
+            } else {
+             console.log('[UI] Critical Path tab activated, using cached data.');
+             // Potentially refresh critical path view if needed, even with cached data
+             // e.g., updateCriticalPathView(state.cpmResults);
+        }
+    } else if (tabName === 'floatAnalysis') {
+        if (elements.floatAnalysisTabPanel) elements.floatAnalysisTabPanel.style.display = 'block';
+        if (elements.floatAnalysisTabBtn) {
+            elements.floatAnalysisTabBtn.classList.remove('text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+            elements.floatAnalysisTabBtn.classList.add('border-blue-600', 'text-blue-600');
+        }
+        console.log('[UI] Activated Float Analysis Tab');
+        // Load data if needed (check based on CPM data presence or project mismatch)
+        if (state.currentProject && 
+            (!state.cpmResults || hierarchicalGanttConfig.currentProjectId !== state.currentProject)) {
+            console.log('[UI] Float Analysis tab activated, loading combined schedule data...');
+            loadAndProcessScheduleData(); 
+        } else if (state.cpmResults) {
+             console.log('[UI] Float Analysis tab activated, updating view with cached data.');
+             // Ensure view is updated even if data was loaded previously
+                updateFloatAnalysis(state.cpmResults);
+            }
+        // REMOVED OLD LOGIC:
+        // // Load CPM data if needed for float analysis
+        // if (state.currentProject && (!state.cpmData || state.cpmData.length === 0)) {
+        //     console.log('[UI] Loading CPM data for float analysis tab...');
+        //         loadCPMData();
+        // }
+    }
+    
+    console.log(`[UI] Tab set to: ${tabName}`);
+}
+
+// --- Initialize Schedule ---
+    function initializeSchedule() {
+    // Update page title
+        updatePageTitle();
+        
+        // Initial load of projects
+        loadProjects()
+        .then((projects) => {
+                console.log("Projects loaded successfully");
+                
+            // After projects load, check the active tab and load data if needed
+            const initialTab = localStorage.getItem('scheduleActiveTab') || 'gantt';
+            setActiveTab(initialTab);
+            
+            // Trigger the initial data load using the combined function if a project is selected
+            if (state.currentProject) {
+                console.log(`[Init] Loading combined schedule data for initial project: ${state.currentProject}`);
+                loadAndProcessScheduleData(); // Use the new function
+            }
+            // OLD LOGIC Removed:
+            // // If Gantt tab is active and we have a project, load the data
+            // if (state.activeTab === 'gantt' && state.currentProject) {
+            //     console.log(`[Init] Loading Gantt data for initial project: ${state.currentProject}`);
+            //     loadHierarchicalGanttData();
+            // }
+        })
+        .catch(err => {
+            console.error("Error during schedule initialization:", err);
+            // Show error in the Gantt container
+            showGanttError("Failed to load projects. Please try refreshing the page.");
+        });
+            
+        console.log("Schedule module initialized");
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Populate the global elements object
+    Object.assign(elements, {
+        // Page elements
+        pageTitle: document.querySelector('header h1'),
+        
+        // Project filter elements
+        projectFilter: document.getElementById('projectFilter'),
+        currentProjectId: document.getElementById('currentProjectId'),
+        
+        // Tab elements
+        ganttTabBtn: document.getElementById('ganttTabBtn'),
+        criticalPathTabBtn: document.getElementById('criticalPathTabBtn'), // Uncommented
+        floatAnalysisTabBtn: document.getElementById('floatAnalysisTabBtn'),
+        
+        // Panel elements
+        ganttTabPanel: document.getElementById('ganttTabPanel'), // Keep reference
+        d3GanttChart: document.getElementById('d3GanttChart'), // D3 Gantt Chart container
+        ganttLoading: document.getElementById('ganttLoading'), // Keep reference
+        criticalPathTabPanel: document.getElementById('criticalPathTabPanel'), // Uncommented
+        floatAnalysisTabPanel: document.getElementById('floatAnalysisTabPanel'),
+        
+        // Canvas elements
+        floatHistogramCanvas: document.getElementById('floatHistogramChart'),
+        
+        // Table elements
+        // criticalPathTableBody: document.getElementById('criticalPathTableBody'), // Removed
+        nearCriticalTableBody: document.getElementById('nearCriticalTableBody'),
+        
+        // Limit controls
+        limitControls: document.getElementById('limitControls'),
+        recordLimit: document.getElementById('recordLimit'),
+        applyLimitBtn: document.getElementById('applyLimitBtn'),
+        
+        // Critical Path Filter Elements
+        cpWbsLevelFilter: document.getElementById('cpWbsLevelFilter'),
+        cpApplyWbsFilter: document.getElementById('cpApplyWbsFilter'),
+        cpResetWbsFilter: document.getElementById('cpResetWbsFilter'),
+        cpGraphContainer: document.getElementById('cpGraphContainer'), // Container for the graph itself
+        criticalTasksTableBody: document.getElementById('criticalTasksTableBody'), // Added table body ID
+    });
+
+    // Add event listeners for tab elements and CPM button immediately
+    function setupEventListeners() {
+        console.log('[Init] Setting up all event listeners');
+        
+        // Tab buttons
+        if (elements.ganttTabBtn) {
+            elements.ganttTabBtn.addEventListener('click', function() {
+                setActiveTab('gantt');
+            });
+        }
+        
+        if (elements.floatAnalysisTabBtn) {
+            elements.floatAnalysisTabBtn.addEventListener('click', function() {
+                setActiveTab('floatAnalysis');
+            });
+        }
+        
+        // Removed criticalPathTabBtn listener
+        if (elements.criticalPathTabBtn) {
+            elements.criticalPathTabBtn.addEventListener('click', function() {
+                setActiveTab('criticalPath');
+            });
+        }
+        
+        // Ensure limit controls work
+        if (elements.applyLimitBtn) {
+            elements.applyLimitBtn.addEventListener('click', function() {
+                const limitInput = elements.recordLimit;
+                if (limitInput) {
+                    const newLimit = parseInt(limitInput.value, 10);
+                    if (newLimit && newLimit >= 10 && newLimit <= 1000) {
+                        hierarchicalGanttConfig.recordLimit = newLimit;
+                        loadHierarchicalGanttData();
+                            } else {
+                        alert("Please enter a valid limit between 10 and 1000");
+                    }
+                }
+            });
+        }
+        
+        // Critical Path Filter Buttons
+        if (elements.cpApplyWbsFilter) {
+            elements.cpApplyWbsFilter.addEventListener('click', applyCpWbsFilter);
+        }
+        if (elements.cpResetWbsFilter) {
+            elements.cpResetWbsFilter.addEventListener('click', resetCpWbsFilter);
+        }
+    }
+    
+    // Run event listener setup immediately
+    setupEventListeners();
+    
+    // ... (rest of the code inside DOMContentLoaded) ...
+
+    // Initial call
+    initializeSchedule();
+    
+    // Initialize D3 Gantt Chart
+    initScheduleWithD3Gantt();
+    
+    // Set a small delay to ensure DOM is fully ready before initializing the chart
+    setTimeout(() => {
+        console.log("[Init] Running delayed initialization...");
+        // Make sure D3 Gantt Chart is visible
+        if (elements.d3GanttChart) {
+            elements.d3GanttChart.style.display = "block";
+        }
+        
+        // If no data loaded yet and we have a project ID, load data
+        if (state.currentProject && state.activeTab === 'gantt') {
+            if (!hierarchicalGanttConfig.currentProjectId) {
+                console.log("[Init] Delayed loading of Gantt data...");
+                loadHierarchicalGanttData();
+            }
+        }
+    }, 1000);
+}); // End of DOMContentLoaded event
+
+// Populate the tabular data display with the API data
+function populateDataTable(data) {
+    console.log("[Hierarchical Gantt] Populating data table...");
+    const tableBody = document.getElementById("ganttDataTableBody");
+    const tableContainer = document.getElementById("ganttDataTable");
+    
+    if (!tableBody || !tableContainer) {
+        console.error("[Hierarchical Gantt] Data table elements not found");
+            return;
+        }
+
+    // Clear existing rows
+    tableBody.innerHTML = "";
+    
+    // Format date helper function - more readable format
+    const formatDate = (dateStr) => {
+        if (!dateStr) return "N/A";
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return "N/A";
+            return date.toLocaleString(undefined, { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit' 
+            });
+        } catch (e) {
+            return "N/A";
+        }
+    };
+    
+    // Add rows for each task
+    data.forEach(task => {
+        const row = document.createElement("tr");
+        
+        // Style WBS rows differently
+        if (!task.task_id) {
+            row.classList.add("wbs-row");
+        }
+        
+        // Style critical tasks
+        if (task.driving_path_flag === 'Y') {
+            row.classList.add("critical-row");
+        }
+        
+        // Add hover effect
+        row.classList.add("hover:bg-gray-50");
+        
+        row.innerHTML = `
+            <td class="px-3 py-2">${task.task_id || "WBS"}</td>
+            <td class="px-3 py-2">${(task.indented_wbs_name || task.task_name || task.wbs_name || "Unnamed").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</td>
+            <td class="px-3 py-2">${formatDate(task.start_date)}</td>
+            <td class="px-3 py-2">${formatDate(task.end_date)}</td>
+            <td class="px-3 py-2">${task.status_code || "N/A"}</td>
+            <td class="px-3 py-2 text-right">${task.target_drtn_hr_cnt !== undefined ? task.target_drtn_hr_cnt : "N/A"}</td>
+            <td class="px-3 py-2 text-center">${task.driving_path_flag === 'Y' ? "Yes" : "No"}</td>
+            <td class="px-3 py-2">${task.wbs_path || "N/A"}</td>
+        `;
+        
+        tableBody.appendChild(row);
+    });
+    
+    // Show the table container
+    tableContainer.style.display = "block";
+    console.log("[Hierarchical Gantt] Data table populated with", data.length, "rows");
+}
+
+// --- CPM Data Loading ---
+function loadCPMData() {
+    const projectId = state.currentProject;
+    if (!projectId) {
+        console.error("[CPM] No project ID selected");
+        // Return a rejected promise for consistency
+        return Promise.reject(new Error("No project ID selected for CPM data")); 
+    }
+    
+    console.log(`[CPM] Loading CPM data for project ${projectId}`);
+    
+    // Make API call to get CPM data and return the promise
+    return fetch(`/api/cpm/${projectId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Server returned ${response.status}: ${response.statusText} for CPM data`);
+            }
+            return response.json(); // Expects an object like { data: [...] }
+        })
+        .then(data => {
+            // Resolve the promise with the actual array of tasks
+            if (!data || !Array.isArray(data.data)) {
+                console.warn("[CPM] Received unexpected data format. Expected { data: [...] }.", data);
+                throw new Error("Invalid CPM data format received from server.");
+            }
+            console.log(`[CPM] Fetch successful, returning ${data.data.length} tasks.`);
+            return data.data; // Resolve with the array
+        })
+        .catch(error => {
+            console.error("[CPM] Error loading CPM data:", error);
+            // Optionally, show a specific error message for CPM failures
+            // showCPMError(`Failed to load critical path data: ${error.message}`);
+            throw error; // Re-throw error to propagate the rejection
+        });
+}
+
+// --- Other CPM-related functions ---
+
+// Update float analysis visualizations
+function updateFloatAnalysis(cpmResults) {
+    if (!cpmResults || cpmResults.length === 0) {
+        console.log("[CPM] No CPM results for float analysis");
+        // Implementation would go here
+        // This would update the float histogram and near-critical tasks table
+    }
+}
+
+// --- Populate WBS Level 1 Filter Dropdown ---
+const wbsLevel1FilterDropdown = document.getElementById('wbsLevel1Filter');
+if (wbsLevel1FilterDropdown) {
+    const currentFilterValue = wbsLevel1FilterDropdown.value; // Store current selection
+
+    // Collect unique WBS Level 1 names from ALL critical tasks
+    const wbsLevel1Names = new Set();
+    allCriticalTasksSorted.forEach(task => {
+        // Ensure task and wbsPath are valid before splitting
+        if (task && typeof task.wbsPath === 'string' && task.wbsPath.length > 0) {
+            const level1Name = task.wbsPath.split(' > ')[0];
+            if (level1Name) { // Add check for non-empty name
+                 wbsLevel1Names.add(level1Name);
+            }
+        } else if (task) {
+             // Optionally log tasks missing WBS Path for debugging
+             // console.log(`[Graph Filter] Task ${task.id} missing wbsPath for filter population.`);
+        }
+    });
+
+    // Clear existing options (except 'All')
+    while (wbsLevel1FilterDropdown.options.length > 1) {
+        wbsLevel1FilterDropdown.remove(1);
+    }
+    // Add sorted WBS Level 1 options
+    Array.from(wbsLevel1Names).sort().forEach(wbsName => {
+            const option = document.createElement('option');
+        option.value = wbsName; // Use the name itself as the value
+        option.textContent = wbsName;
+        wbsLevel1FilterDropdown.appendChild(option);
+    });
+
+    // Restore previous selection if it still exists
+    // Check if the stored value is actually present in the new options
+    const optionExists = Array.from(wbsLevel1FilterDropdown.options).some(opt => opt.value === currentFilterValue);
+    if (optionExists) {
+        wbsLevel1FilterDropdown.value = currentFilterValue;
+                    } else {
+        wbsLevel1FilterDropdown.value = 'all'; // Default to 'all' if previous value is gone
+    }
+    
+    console.log(`[Graph] Populated WBS Level 1 filter with ${wbsLevel1Names.size} unique names.`);
+    } else {
+    console.error("[Graph] WBS Level 1 Filter Dropdown not found!");
+}
+
+// Function to populate WBS filter dropdown for Critical Path tab
+function populateCpWbsFilterDropdown(tasks) { // Changed parameter name for clarity
+    const wbsLevelFilter = document.getElementById('cpWbsLevelFilter');
+    if (!wbsLevelFilter) {
+        console.error("[Critical Path Filter] WBS filter dropdown not found");
+        return;
+    }
+    
+    // Clear existing options except "All Tasks"
+    while (wbsLevelFilter.options.length > 1) {
+        wbsLevelFilter.remove(1);
+    }
+    
+    // Find all second-level WBS items from the provided task data
+    const secondLevelWbs = new Set();
+    tasks.forEach(task => {
+        // Check if it's a WBS item and has a path
+        if (task.is_wbs && task.wbs_path) { 
+            const segments = task.wbs_path.split(' > ');
+            // Check if it's specifically a level 2 WBS item (path has 2 segments)
+            if (segments.length === 2) {
+                secondLevelWbs.add(segments[1]); // Add the second segment name
+            }
+        }
+    });
+    
+    const sortedWbsItems = Array.from(secondLevelWbs).sort();
+    
+    sortedWbsItems.forEach(wbsItem => {
+            const option = document.createElement('option');
+        option.value = wbsItem;
+        option.textContent = wbsItem;
+        wbsLevelFilter.appendChild(option);
+    });
+    
+    console.log(`[Critical Path Filter] Populated WBS filter with ${sortedWbsItems.length} items`);
+
+    // Apply/Reset listeners are set up in setupEventListeners
+}
+
+// Function to apply WBS filter for Critical Path
+function applyCpWbsFilter() {
+    const selectedWbs = elements.cpWbsLevelFilter ? elements.cpWbsLevelFilter.value : 'all';
+    console.log(`[Critical Path Filter] Apply button clicked. Selected WBS: ${selectedWbs}`);
+    
+    if (!state.allCriticalTasks) {
+        console.warn("[Critical Path Filter] No critical tasks loaded yet.");
+        return;
+    }
+
+    let filteredTasks;
+    if (selectedWbs === 'all') {
+        filteredTasks = state.allCriticalTasks; // Use the original full list
+    } else {
+        // Filter based on the second segment of the wbs_path matching the selection
+        filteredTasks = state.allCriticalTasks.filter(task => {
+            if (!task.wbs_path) return false;
+            const segments = task.wbs_path.split(' > ');
+            return segments.length >= 2 && segments[1] === selectedWbs;
+        });
+    }
+    
+    console.log(`[Critical Path Filter] Displaying ${filteredTasks.length} tasks.`);
+    populateCriticalTasksTable(filteredTasks); // Re-populate the table with filtered data
+}
+
+// Function to reset WBS filter for Critical Path
+function resetCpWbsFilter() {
+    if (elements.cpWbsLevelFilter) {
+        elements.cpWbsLevelFilter.value = 'all';
+    }
+    console.log('[Critical Path Filter] Reset button clicked.');
+    
+    // Re-populate the table with the original full list of critical tasks
+    if (state.allCriticalTasks) {
+        populateCriticalTasksTable(state.allCriticalTasks);
+    }
+}
+
+// --- Combined Data Loader ---
+async function loadAndProcessScheduleData() {
+    const projectId = state.currentProject;
+    if (!projectId) {
+        console.warn("[Loader] No project selected, cannot load data.");
+        return; // Or handle as appropriate
+    }
+
+    // Prevent concurrent loads for the same project if one is already in progress (optional but good practice)
+    if (state.isLoadingProject === projectId) {
+        console.log(`[Loader] Data load already in progress for project: ${projectId}`);
+        return;
+    }
+    state.isLoadingProject = projectId; // Set loading flag
+
+    console.log(`[Loader] Starting parallel data load for project: ${projectId}`);
+    showGanttLoading(true); // Show loading indicator for Gantt
+    // Clear existing critical path table while loading
+    if (elements.criticalTasksTableBody) {
+        elements.criticalTasksTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">Loading critical tasks...</td></tr>`;
+    }
+
+    try {
+        // Use Promise.all to fetch both datasets concurrently
+        const [ganttData, cpmData] = await Promise.all([
+            loadHierarchicalGanttData(), // Assumes it uses state.currentProject internally
+            loadCPMData()             // Assumes it uses state.currentProject internally
+        ]);
+
+        console.log(`[Loader] Received Gantt data (${ganttData.length} rows) and CPM data (${cpmData.length} tasks)`);
+
+        // Store CPM results in state
+        state.cpmResults = cpmData;
+        console.log("[Loader] Stored CPM results in state.");
+
+        // Filter critical tasks from cpmData using the correct 'isCritical' flag
+        const criticalTasks = cpmData.filter(task => task.isCritical === true); // Corrected filter
+        state.allCriticalTasks = criticalTasks; // Store filtered critical tasks
+        console.log(`[Loader] Filtered ${criticalTasks.length} critical tasks.`);
+
+        // Process and render Gantt data FIRST (this sets state.ganttData and populates WBS filters)
+        processAndRenderHierarchicalData(ganttData);
+        console.log("[Loader] Processed and rendered Gantt data.");
+
+        // Populate the critical tasks table AFTER Gantt data is processed and in state
+        populateCriticalTasksTable(criticalTasks); 
+
+        // Optional: Update Float Analysis immediately if that tab is active
+        // Or rely on setActiveTab to call updateFloatAnalysis when switched to.
+        if (state.activeTab === 'floatAnalysis') {
+             console.log("[Loader] Float Analysis tab active, updating view.");
+             updateFloatAnalysis(state.cpmResults);
+        }
+
+        // Optional: Populate Critical Path WBS filter if needed (already done in processAndRenderHierarchicalData)
+        // populateCpWbsFilterDropdown(cpmData); // Or filter cpmData for critical tasks first if needed
+
+    } catch (error) {
+        console.error("[Loader] Error during parallel data load or processing:", error);
+        // Show a general error or specific ones based on the error type
+        showGanttError("Failed to load schedule data. Please check console for details.");
+        // Clear critical path table on error
+        if (elements.criticalTasksTableBody) {
+            elements.criticalTasksTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-red-500">Error loading critical tasks.</td></tr>`;
+        }
+    } finally {
+        // Ensure loading indicators are hidden regardless of success/failure
+        showGanttLoading(false);
+        state.isLoadingProject = null; // Clear loading flag
+        console.log(`[Loader] Data load process finished for project: ${projectId}`);
+    }
+}
+
+// --- Critical Path Table Population ---
+function populateCriticalTasksTable(criticalTasks) {
+    if (!elements.criticalTasksTableBody) {
+        console.error("[Critical Path Table] Table body element not found!");
+        return;
+    }
+
+    const tableBody = elements.criticalTasksTableBody;
+    tableBody.innerHTML = ""; // Clear existing content or loading message
+
+    if (!criticalTasks || criticalTasks.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 text-gray-500">No critical tasks found for this project.</td></tr>`;
+        console.log("[Critical Path Table] No critical tasks to display.");
+        return;
+    }
+    
+    // Check if Gantt data is available for merging WBS path
+    if (!state.ganttData || state.ganttData.length === 0) {
+        console.warn("[Critical Path Table] Gantt data not available for WBS path lookup. Table may lack WBS info.");
+        // Optionally proceed without WBS path or show an error/different message
+    }
+    
+    // Create a Map for efficient lookup of Gantt tasks by task_id
+    const ganttDataMap = new Map(state.ganttData.map(task => [task.task_id, task]));
+
+    console.log(`[Critical Path Table] Populating table with ${criticalTasks.length} critical tasks. Merging with Gantt data.`);
+
+    // Helper to format dates (consider reusing or creating a shared helper)
+    const formatDateSimple = (dateStr) => {
+        if (!dateStr) return "N/A";
+        // The CPM dates (es, ef) might be numbers (hours from start) or dates.
+        // Handle both possibilities. If number, assume hours and convert based on a project start date (if available)
+        // For simplicity now, assume they are date strings or timestamps parsable by new Date()
+        try {
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? "N/A" : date.toLocaleDateString();
+        } catch (e) { return "N/A"; }
+    };
+
+    criticalTasks.forEach(criticalTask => {
+        const row = tableBody.insertRow();
+        // Find corresponding full task details from Gantt data
+        const ganttTask = ganttDataMap.get(criticalTask.id); 
+        
+        // Use data from criticalTask primarily, but enrich with ganttTask where needed (like wbs_path)
+        const taskId = criticalTask.id || 'N/A';
+        const taskName = ganttTask?.task_name || criticalTask.name || 'N/A'; // Prefer Gantt name if available
+        const startDate = formatDateSimple(criticalTask.es); // Use calculated ES
+        const endDate = formatDateSimple(criticalTask.ef);   // Use calculated EF
+        const duration = criticalTask.duration !== undefined ? criticalTask.duration : 'N/A'; // Use calculated duration
+        const wbsPath = ganttTask?.wbs_path || 'N/A (Not Found)'; // Get WBS from Gantt data
+
+            row.innerHTML = `
+            <td class="px-3 py-2 whitespace-nowrap">${taskId}</td>
+            <td class="px-3 py-2">${taskName}</td>
+            <td class="px-3 py-2 whitespace-nowrap">${startDate}</td>
+            <td class="px-3 py-2 whitespace-nowrap">${endDate}</td>
+            <td class="px-3 py-2 text-right">${duration}</td>
+            <td class="px-3 py-2">${wbsPath}</td> 
+        `;
+    });
+}
+
+// --- Lookahead Filter Logic ---
+function applyLookaheadFilter(days) {
+    if (!state.lastGanttData) {
+        console.error('[Lookahead Filter] No data to filter');
+        return;
+    }
+    const now = new Date();
+    const lookaheadEnd = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+    // Filter tasks where start or end date falls within the lookahead window
+    const filteredTasks = state.lastGanttData.filter(task => {
+        if (!task.start_date || !task.end_date) return false;
+        const start = new Date(task.start_date);
+        const end = new Date(task.end_date);
+        return (start >= now && start <= lookaheadEnd) || (end >= now && end <= lookaheadEnd) || (start <= now && end >= now); // include ongoing
+    });
+    console.log(`[Lookahead Filter] Showing ${filteredTasks.length} tasks for next ${days} days`);
+    // Rebuild hierarchy and render
+    if (state.wbsHierarchy) {
+        const hierarchicalTasks = createTaskHierarchyWithAggregation(filteredTasks, state.wbsHierarchy);
+        state.ganttData = hierarchicalTasks;
+        renderD3Gantt(hierarchicalTasks);
+    }
+}
+
+function resetLookaheadFilter() {
+    if (!state.lastGanttData || !state.wbsHierarchy) return;
+    const hierarchicalTasks = createTaskHierarchyWithAggregation(state.lastGanttData, state.wbsHierarchy);
+    state.ganttData = hierarchicalTasks;
+    renderD3Gantt(hierarchicalTasks);
+}
+
+// Add event listeners for lookahead filter after DOM is ready
+window.addEventListener('DOMContentLoaded', function() {
+    const lookaheadFilter = document.getElementById('lookaheadFilter');
+    const applyLookaheadBtn = document.getElementById('applyLookaheadFilter');
+    const resetLookaheadBtn = document.getElementById('resetLookaheadFilter');
+    if (applyLookaheadBtn && lookaheadFilter) {
+        applyLookaheadBtn.addEventListener('click', function() {
+            const days = parseInt(lookaheadFilter.value, 10);
+            if (!isNaN(days)) {
+                applyLookaheadFilter(days);
+            }
+        });
+    }
+    if (resetLookaheadBtn && lookaheadFilter) {
+        resetLookaheadBtn.addEventListener('click', function() {
+            lookaheadFilter.value = '7';
+            resetLookaheadFilter();
+        });
+    }
+});

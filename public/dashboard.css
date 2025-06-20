@@ -1,0 +1,467 @@
+/* Dashboard specific styles */
+
+/* Timeline chart styling */
+#timelineChart {
+    width: 100%;
+}
+
+/* Critical path step visualization */
+.critical-path-step {
+    position: relative;
+    padding-left: 30px;
+}
+
+.critical-path-step::before {
+    content: '';
+    position: absolute;
+    left: 7px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background-color: #4f46e5;
+}
+
+.critical-path-step::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: #4f46e5;
+}
+
+.critical-path-step:last-child::before {
+    bottom: 50%;
+}
+
+/* Table row hover effect */
+tbody tr:hover {
+    background-color: rgba(79, 70, 229, 0.05);
+}
+
+/* Risk level indicators */
+.risk-high {
+    background-color: #fee2e2;
+    color: #b91c1c;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    display: inline-block;
+    font-size: 0.75rem;
+}
+
+.risk-medium {
+    background-color: #fef3c7;
+    color: #b45309;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    display: inline-block;
+    font-size: 0.75rem;
+}
+
+.risk-low {
+    background-color: #d1fae5;
+    color: #065f46;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    display: inline-block;
+    font-size: 0.75rem;
+}
+
+/* Editable table cell */
+.editable-cell {
+    position: relative;
+}
+
+.editable-cell:hover::after {
+    content: '\f044';
+    font-family: 'Font Awesome 5 Free';
+    font-weight: 900;
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6b7280;
+    opacity: 0.5;
+}
+
+.editable-cell:hover {
+    background-color: #f9fafb;
+}
+
+/* Dashboard cards */
+.dashboard-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Custom scrollbar for tables */
+.overflow-x-auto::-webkit-scrollbar {
+    height: 8px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+    background: #bdc3c7;
+    border-radius: 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+    background: #a0a0a0;
+}
+
+/* Resource allocation chart */
+#resourceChart {
+    width: 100%;
+}
+
+/* Popover for component details */
+.component-popover {
+    position: absolute;
+    z-index: 10;
+    background-color: white;
+    border-radius: 6px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    padding: 12px;
+    min-width: 300px;
+    max-width: 400px;
+    display: none;
+}
+
+.component-popover.visible {
+    display: block;
+}
+
+.component-popover-arrow {
+    position: absolute;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-bottom: 8px solid white;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+/* Loading indicator overlay */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 50;
+}
+
+.loading-spinner {
+    border: 4px solid rgba(79, 70, 229, 0.3);
+    border-radius: 50%;
+    border-top: 4px solid #4f46e5;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Tooltip for task connections */
+.task-connection {
+    position: relative;
+    cursor: pointer;
+}
+
+.task-connection .tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #1f2937;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.task-connection:hover .tooltip {
+    opacity: 1;
+}
+
+/* Media query for mobile responsiveness */
+@media (max-width: 768px) {
+    .dashboard-nav {
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .dashboard-card {
+        padding: 12px;
+    }
+}
+
+/* Gantt chart styles */
+.gantt-container {
+    position: relative;
+    width: 100%;
+    overflow-x: auto;
+}
+
+.gantt-legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 10px;
+}
+
+.gantt-legend-item {
+    display: flex;
+    align-items: center;
+    font-size: 0.8rem;
+    color: #4b5563;
+}
+
+.gantt-legend-color {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    margin-right: 6px;
+}
+
+.look-ahead-filter {
+    display: flex;
+    align-items: center;
+    padding: 5px 0;
+}
+
+/* Project Filter Styles */
+.project-filter-container {
+    background-color: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+    transition: background-color 0.3s ease;
+}
+
+.project-filter-container:hover {
+    background-color: #f3f4f6;
+}
+
+#projectFilter {
+    min-width: 220px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+#projectFilter:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+}
+
+#refreshProjectBtn {
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+#refreshProjectBtn:hover {
+    background-color: #2563eb;
+}
+
+#refreshProjectBtn:active {
+    transform: scale(0.97);
+}
+
+#currentProjectId {
+    font-family: monospace;
+    padding: 2px 6px;
+    background-color: #e5e7eb;
+    border-radius: 4px;
+}
+
+/* Loading State */
+body.loading::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.7);
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+}
+
+body.loading::before {
+    content: '';
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px;
+    height: 50px;
+    border: 5px solid #e5e7eb;
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    z-index: 10000;
+    pointer-events: none;
+}
+
+@keyframes spin {
+    0% { transform: translate(-50%, -50%) rotate(0deg); }
+    100% { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Navigation Styles */
+.dashboard-nav a {
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.dashboard-nav a::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 0;
+    height: 2px;
+    background-color: transparent;
+    transition: all 0.2s ease;
+    transform: translateX(-50%);
+}
+
+.dashboard-nav a:hover::after {
+    width: 80%;
+    background-color: rgba(37, 99, 235, 0.5);
+}
+
+/* Schedule Drilldown compact layout */
+.schedule-drilldown-compact #kpi-section .dashboard-card {
+    padding: 1rem;
+}
+
+.schedule-drilldown-compact #kpi-section .dashboard-card h3 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.schedule-drilldown-compact #kpi-section .dashboard-card p {
+    font-size: 0.75rem;
+}
+
+.schedule-drilldown-compact .metric-card {
+    min-height: 80px;
+}
+
+.schedule-drilldown-compact .chart-container {
+    height: 250px !important;
+}
+
+.schedule-drilldown-compact #table-section th {
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+}
+
+.schedule-drilldown-compact #table-section td {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+}
+
+/* Metric card hover effects */
+.metric-card {
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+}
+
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.metric-card:hover.border-transparent {
+    border-color: transparent;
+}
+
+/* Specific hover border colors for each metric */
+.metric-card[data-metric="fs"]:hover {
+    border-color: #a855f7 !important;
+}
+
+.metric-card[data-metric="non-fs"]:hover {
+    border-color: #ef4444 !important;
+}
+
+.metric-card[data-metric="leads"]:hover {
+    border-color: #3b82f6 !important;
+}
+
+.metric-card[data-metric="lags"]:hover {
+    border-color: #10b981 !important;
+}
+
+.metric-card[data-metric="excessive-lags"]:hover {
+    border-color: #f97316 !important;
+}
+
+/* Active/Selected state border colors for each metric */
+.metric-card[data-metric="fs"]:active,
+.metric-card[data-metric="fs"]:focus,
+.metric-card[data-metric="fs"].active {
+    border-color: #a855f7 !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.metric-card[data-metric="non-fs"]:active,
+.metric-card[data-metric="non-fs"]:focus,
+.metric-card[data-metric="non-fs"].active {
+    border-color: #ef4444 !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.metric-card[data-metric="leads"]:active,
+.metric-card[data-metric="leads"]:focus,
+.metric-card[data-metric="leads"].active {
+    border-color: #3b82f6 !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.metric-card[data-metric="lags"]:active,
+.metric-card[data-metric="lags"]:focus,
+.metric-card[data-metric="lags"].active {
+    border-color: #10b981 !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.metric-card[data-metric="excessive-lags"]:active,
+.metric-card[data-metric="excessive-lags"]:focus,
+.metric-card[data-metric="excessive-lags"].active {
+    border-color: #f97316 !important;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
