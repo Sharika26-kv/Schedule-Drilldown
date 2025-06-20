@@ -1,0 +1,75 @@
+WITH ActivityRelationshipView_CTE AS (
+SELECT 
+    tk.proj_id AS Project_ID,
+    tk.task_code AS Activity_ID,
+    tk.task_name AS Activity_Name,
+    tk.target_drtn_hr_cnt AS Original_Duration,
+    tk.status_code AS Activity_Status,
+    tk1.task_code AS Activity_ID2,
+    tk1.task_name AS Activity_Name2,
+    tk1.status_code AS Activity_Status2,
+    tp.lag_hr_cnt AS Lag,
+    tk.driving_path_flag AS Driving,
+    tk.free_float_hr_cnt AS FreeFloat,
+    tp.pred_type AS RelationshipType,
+    -- Calculated Column: Predecessor_Activity_Duration
+    CAST(tp.lag_hr_cnt AS REAL) / NULLIF(tk.target_drtn_hr_cnt, 0) AS Predecessor_Activity_Duration,
+    -- Calculated Column: Relationship_Status
+    CASE
+        WHEN tk.status_code = 'TK_Complete' AND tk1.status_code = 'TK_Complete' THEN 'Complete'
+        ELSE 'Incomplete'
+    END AS Relationship_Status
+FROM TASKPRED tp
+INNER JOIN TASK tk 
+    ON tk.task_id = tp.task_id
+    AND tk.task_id IS NOT NULL
+INNER JOIN TASK tk1 
+    ON tk1.task_id = tp.pred_task_id
+    AND tk1.task_id IS NOT NULL
+)
+SELECT
+    Activity_ID,
+    Project_ID,
+    Activity_Name,
+    Original_Duration,
+    Activity_Status,
+    Activity_ID2,
+    Activity_Name2,
+    Activity_Status2,
+    Lag,
+    Driving,
+    FreeFloat,
+    RelationshipType,
+    Predecessor_Activity_Duration,
+    Relationship_Status,
+    -- Calculated Column: ExcessiveLag
+    CASE
+        WHEN Predecessor_Activity_Duration >= 0.75 THEN 'Excessive Lag'
+        ELSE NULL
+    END AS ExcessiveLag,
+    -- Calculated Column: Lags
+    CASE WHEN Lag > 0 THEN 'Lag' ELSE NULL END AS Lags,
+    -- Calculated Column: Lead
+    CASE WHEN Lag < 0 THEN 'Lead' ELSE NULL END AS Lead,
+    -- Calculated Column: LeadORLag
+    CASE WHEN Lag <> 0 THEN 'Lead or Lag' ELSE 'None' END AS LeadORLag
+FROM ActivityRelationshipView_CTE
+GROUP BY 
+    Activity_ID,
+    Project_ID,
+    Activity_Name,
+    Original_Duration,
+    Activity_Status,
+    Activity_ID2,
+    Activity_Name2,
+    Activity_Status2,
+    Lag,
+    Driving,
+    FreeFloat,
+    RelationshipType,
+    Predecessor_Activity_Duration,
+    Relationship_Status,
+    ExcessiveLag,
+    Lags,
+    Lead,
+    LeadORLag

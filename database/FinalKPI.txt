@@ -1,0 +1,59 @@
+SELECT 
+Project_ID,
+    COUNT(*) AS Total_Relationship_Count,
+
+    COUNT(CASE 
+        WHEN Relationship_Status = 'Incomplete'
+             AND ExcessiveLag = 'Excessive Lag'
+        THEN 1 END) AS ExcessiveLag_Count,
+
+    COUNT(CASE 
+        WHEN RelationshipType = 'PR_FS'
+             AND Lag = 0
+             AND Relationship_Status = 'Incomplete'
+        THEN 1 END) AS FSLR_Count,
+
+    COUNT(CASE 
+        WHEN Lag > 0 AND Relationship_Status = 'Incomplete'
+        THEN 1 END) AS Lag_Count,
+
+    COUNT(CASE 
+        WHEN Lag < 0 AND Relationship_Status = 'Incomplete'
+        THEN 1 END) AS Leads_Count,
+
+    COUNT(CASE 
+        WHEN Relationship_Status = 'Incomplete'
+        THEN 1 END) AS Remaining_Relationship_Count,
+
+    ROUND(COUNT(CASE WHEN Lag > 0 AND Relationship_Status = 'Incomplete' THEN 1 END) * 1.0 / 
+          COUNT(CASE WHEN Relationship_Status = 'Incomplete' THEN 1 END), 2) AS Lag_Percentage,
+
+    ROUND(COUNT(CASE WHEN Lag < 0 AND Relationship_Status = 'Incomplete' THEN 1 END) * 1.0 / 
+          COUNT(CASE WHEN Relationship_Status = 'Incomplete' THEN 1 END), 2) AS Lead_Percentage,
+
+    ROUND(COUNT(*) * 1.0 / 
+          COUNT(CASE WHEN Relationship_Status = 'Incomplete' THEN 1 END), 2) AS Relationship_Percentage,
+
+    ROUND(COUNT(CASE WHEN Relationship_Status = 'Incomplete' THEN 1 END) * 0.10, 2) AS KPILags,
+    0 AS KPILeads,
+    ROUND(COUNT(*) * 0.90, 2) AS KPITypicalRelationships,
+    ROUND(COUNT(*) * 0.05, 2) AS KPIExcessiveLag,
+
+    (COUNT(CASE 
+        WHEN RelationshipType = 'PR_FS'
+             AND Lag = 0
+             AND Relationship_Status = 'Incomplete'
+        THEN 1 END) - ROUND(COUNT(*) * 0.90, 2)) AS FSLR_Difference,
+
+    (COUNT(CASE 
+        WHEN Relationship_Status = 'Incomplete'
+             AND ExcessiveLag = 'Excessive Lag'
+        THEN 1 END) - ROUND(COUNT(*) * 0.05, 2)) AS KPI_ExcessiveLag_Diff,
+
+    (COUNT(CASE WHEN Lag > 0 AND Relationship_Status = 'Incomplete' THEN 1 END) -
+     ROUND(COUNT(CASE WHEN Relationship_Status = 'Incomplete' THEN 1 END) * 0.10, 2)) AS Lags_Difference,
+
+    (COUNT(CASE WHEN Lag < 0 AND Relationship_Status = 'Incomplete' THEN 1 END) - 0) AS Leads_Difference
+
+FROM ActivityRelationshipView
+GROUP BY Project_ID
