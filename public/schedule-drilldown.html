@@ -98,17 +98,56 @@
                     </div>
                 </div>
                 
-                <!-- Project Filter -->
-                <div class="border-t border-gray-200 px-6 py-3 bg-gray-50">
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center">
-                            <label for="projectFilter" class="text-sm font-medium text-gray-700 mr-2">Project:</label>
-                            <select id="projectFilter" class="px-4 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                <!-- Enhanced Filter Panel -->
+                <div class="border-t border-gray-200 px-6 py-4 bg-gray-50">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <!-- Project Filter -->
+                        <div class="flex flex-col">
+                            <label for="projectFilter" class="text-sm font-medium text-gray-700 mb-1">Project:</label>
+                            <select id="projectFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
                                 <option value="">All Projects</option>
                             </select>
-                            <button id="refreshProjectBtn" class="ml-2 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700">
-                                <i class="fas fa-sync-alt mr-1"></i> Load
+                        </div>
+                        
+                        <!-- Relationship Type Filter -->
+                        <div class="flex flex-col">
+                            <label for="relationshipTypeFilter" class="text-sm font-medium text-gray-700 mb-1">Relationship Type:</label>
+                            <select id="relationshipTypeFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="all">All Types</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Driving Filter -->
+                        <div class="flex flex-col">
+                            <label for="drivingFilter" class="text-sm font-medium text-gray-700 mb-1">Driving:</label>
+                            <select id="drivingFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="all">All</option>
+                                <option value="Y">Yes</option>
+                                <option value="N">No</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Free Float Filter -->
+                        <div class="flex flex-col">
+                            <label for="freeFloatFilter" class="text-sm font-medium text-gray-700 mb-1">Free Float:</label>
+                            <select id="freeFloatFilter" class="px-3 py-2 border border-gray-300 rounded-lg text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                                <option value="all">All Values</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <!-- Action Buttons -->
+                    <div class="flex items-center justify-between mt-4">
+                        <div class="flex items-center space-x-2">
+                            <button id="applyFiltersBtn" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 transition-colors duration-200">
+                                <i class="fas fa-filter mr-1"></i> Apply Filters
                             </button>
+                            <button id="clearFiltersBtn" class="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-600 transition-colors duration-200">
+                                <i class="fas fa-times mr-1"></i> Clear All
+                            </button>
+                        </div>
+                        <div class="text-sm text-gray-600">
+                            <span id="activeFiltersCount">No active filters</span>
                         </div>
                     </div>
                 </div>
@@ -117,72 +156,70 @@
             <!-- Dashboard Content -->
             <main class="p-4">
                 <!-- Metric Selection Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
-                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-purple-500 transition-all duration-200" data-metric="fs">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-md font-semibold text-gray-800">FS+0d</h3>
-                                <p class="text-xs text-gray-600">Finish-to-Start</p>
-                            </div>
-                            <div class="bg-purple-100 p-2 rounded-full">
-                                <i class="fas fa-link text-purple-600 text-lg"></i>
-                            </div>
-                        </div>
+                <div class="grid grid-cols-2 md:grid-cols-7 gap-2 mb-4">
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-purple-500 transition-all duration-200" data-metric="fs">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Typical Relationships FS+0d Lag</h3>
                     </div>
                     
-                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-red-500 transition-all duration-200" data-metric="non-fs">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-md font-semibold text-gray-800">Non FS+0d</h3>
-                                <p class="text-xs text-gray-600">Other relationships</p>
-                            </div>
-                            <div class="bg-red-100 p-2 rounded-full">
-                                <i class="fas fa-random text-red-600 text-lg"></i>
-                            </div>
-                        </div>
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-red-500 transition-all duration-200" data-metric="non-fs">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Typical Relationships Non FS+0d Lag</h3>
                     </div>
                     
-                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all duration-200" data-metric="leads">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-md font-semibold text-gray-800">Leads</h3>
-                                <p class="text-xs text-gray-600">Activity relationships</p>
-                            </div>
-                            <div class="bg-blue-100 p-2 rounded-full">
-                                <i class="fas fa-arrow-right text-blue-600 text-lg"></i>
-                            </div>
-                        </div>
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-indigo-500 transition-all duration-200" data-metric="open-ends">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Open Ends</h3>
                     </div>
                     
-                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-green-500 transition-all duration-200" data-metric="lags">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-md font-semibold text-gray-800">Lags</h3>
-                                <p class="text-xs text-gray-600">Schedule delays</p>
-                            </div>
-                            <div class="bg-green-100 p-2 rounded-full">
-                                <i class="fas fa-clock text-green-600 text-lg"></i>
-                            </div>
-                        </div>
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-blue-500 transition-all duration-200" data-metric="leads">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Leads</h3>
                     </div>
                     
-                    <div class="metric-card bg-white rounded-lg shadow-lg p-4 cursor-pointer border-2 border-transparent hover:border-orange-500 transition-all duration-200" data-metric="excessive-lags">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="text-md font-semibold text-gray-800">Excessive Lags</h3>
-                                <p class="text-xs text-gray-600">Critical delays</p>
-                            </div>
-                            <div class="bg-orange-100 p-2 rounded-full">
-                                <i class="fas fa-exclamation-triangle text-orange-600 text-lg"></i>
-                            </div>
-                        </div>
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-green-500 transition-all duration-200" data-metric="lags">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Lags</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-orange-500 transition-all duration-200" data-metric="excessive-lags">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Excessive Lags</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-pink-500 transition-all duration-200" data-metric="constraints">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Constraints</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-yellow-500 transition-all duration-200" data-metric="excessive-durations">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Excessive Durations</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-teal-500 transition-all duration-200" data-metric="negative-total-float">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Negative Total Float</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-cyan-500 transition-all duration-200" data-metric="critical-total-float">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Critical Total Float</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-rose-500 transition-all duration-200" data-metric="excessive-total-float">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Excessive Total Float</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-emerald-500 transition-all duration-200" data-metric="invalid-dates">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Invalid Dates</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-amber-500 transition-all duration-200" data-metric="riding-data-date">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Riding Data Date</h3>
+                    </div>
+                    
+                    <div class="metric-card bg-white rounded-lg shadow px-1 py-0.5 cursor-pointer border-2 border-transparent hover:border-violet-500 transition-all duration-200" data-metric="resources">
+                        <h3 class="text-xs font-semibold text-gray-800 text-center">Resources</h3>
                     </div>
                 </div>
                 
                 <!-- Dynamic Content Area -->
                 <div id="metric-content" class="hidden">
                     <!-- KPI Cards will be dynamically inserted here -->
-                    <div id="kpi-section" class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4"></div>
+                    <div id="kpi-section" class="flex justify-center mb-4">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl w-full"></div>
+                    </div>
                     
                     <!-- Charts and Tables Section -->
                     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
@@ -228,7 +265,6 @@
                 <!-- Initial State Message -->
                 <div id="initial-message" class="text-center py-16">
                     <div class="bg-white rounded-lg shadow-lg p-8 max-w-md mx-auto">
-                        <i class="fas fa-search-plus text-gray-400 text-6xl mb-4"></i>
                         <h3 class="text-xl font-semibold text-gray-800 mb-2">Select a Metric</h3>
                         <p class="text-gray-600">Choose one of the metric cards above to view detailed schedule analytics</p>
                     </div>

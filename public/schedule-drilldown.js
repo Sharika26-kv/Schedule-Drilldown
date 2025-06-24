@@ -18,8 +18,12 @@ async function initializeApp() {
         // Update last updated time
         document.getElementById('lastUpdated').textContent = new Date().toLocaleString();
         
-        // Load projects
-        await loadProjects();
+        // Load projects and filter options
+        await Promise.all([
+            loadProjects(),
+            loadRelationshipTypes(),
+            loadFreeFloatOptions()
+        ]);
         
         // Set up event listeners
         setupEventListeners();
@@ -40,20 +44,71 @@ function setupEventListeners() {
         });
     });
     
-    // Project filter
+    // Project filter - auto-refresh data when project changes
     document.getElementById('projectFilter').addEventListener('change', function() {
         currentProjectId = this.value;
+        updateActiveFiltersCount();
+        // Reload all filter options based on new project selection
         if (currentMetric) {
+            loadRelationshipTypes(currentMetric);
+            loadDrivingOptions(currentMetric);
+            loadFreeFloatOptions(currentMetric);
             loadMetricData(currentMetric);
         }
     });
     
-    // Refresh button
-    document.getElementById('refreshProjectBtn').addEventListener('click', function() {
+    // Apply filters button
+    document.getElementById('applyFiltersBtn').addEventListener('click', function() {
+        console.log('🔥 Apply Filters button clicked');
+        updateActiveFiltersCount();
         if (currentMetric) {
+            console.log(`🔥 Applying filters for metric: ${currentMetric}`);
             loadMetricData(currentMetric);
         } else {
-            loadProjects();
+            alert('Please select a metric first');
+        }
+    });
+    
+    // Clear filters button
+    document.getElementById('clearFiltersBtn').addEventListener('click', function() {
+        clearAllFilters();
+        if (currentMetric) {
+            loadMetricData(currentMetric);
+        }
+        updateActiveFiltersCount();
+    });
+    
+    // Filter change handlers for real-time updates
+    const filterElements = [
+        'relationshipTypeFilter', 'drivingFilter', 'freeFloatFilter'
+    ];
+    
+    filterElements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.addEventListener('change', function() {
+                updateActiveFiltersCount();
+                
+                // Reload dependent filter options when filters change
+                if (id === 'relationshipTypeFilter') {
+                    // When relationship type changes, reload driving and free float options
+                    if (currentMetric) {
+                        loadDrivingOptions(currentMetric);
+                        loadFreeFloatOptions(currentMetric);
+                    }
+                } else if (id === 'drivingFilter') {
+                    // When driving changes, reload free float options
+                    if (currentMetric) {
+                        loadFreeFloatOptions(currentMetric);
+                    }
+                }
+                
+                // Auto-refresh data when filters change (only if a metric is selected)
+                if (currentMetric) {
+                    console.log(`🔄 Filter ${id} changed, refreshing data...`);
+                    loadMetricData(currentMetric);
+                }
+            });
         }
     });
     
@@ -85,7 +140,7 @@ function setupEventListeners() {
 
 async function loadProjects() {
     try {
-        const response = await fetch(`${API_BASE}/api/schedule/projects`);
+        const response = await fetch(`${API_BASE}/api/project-options`);
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -111,23 +166,217 @@ async function loadProjects() {
     }
 }
 
-function selectMetric(metric) {
-    // Update UI state
+async function loadRelationshipTypes(metricType = 'general') {
+    try {
+        // Use different endpoint based on metric type
+        let endpoint = '/api/relationship-type-options'; // Default general endpoint
+        
+        if (metricType === 'fs') {
+            endpoint = '/api/fs-relationship-type-options';
+        } else if (metricType === 'non-fs') {
+            endpoint = '/api/non-fs-relationship-type-options';
+        } else if (metricType === 'leads') {
+            endpoint = '/api/leads-relationship-type-options';
+        } else if (metricType === 'lags') {
+            endpoint = '/api/lags-relationship-type-options';
+        } else if (metricType === 'excessive-lags') {
+            endpoint = '/api/excessive-lags-relationship-type-options';
+        }
+        
+        // Add project filter if available
+        const params = new URLSearchParams();
+        if (currentProjectId && currentProjectId !== '') {
+            params.append('project_id', currentProjectId);
+        }
+        
+        const queryString = params.toString() ? '?' + params.toString() : '';
+        const response = await fetch(`${API_BASE}${endpoint}${queryString}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const relationshipTypes = await response.json();
+        const select = document.getElementById('relationshipTypeFilter');
+        
+        // Clear existing options except "All Types"
+        select.innerHTML = '<option value="all">All Types</option>';
+        
+        // Add relationship type options
+        relationshipTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type.value;
+            option.textContent = type.label;
+            select.appendChild(option);
+        });
+        
+        console.log(`Loaded relationship types (${metricType}):`, relationshipTypes.length);
+    } catch (error) {
+        console.error('Error loading relationship types:', error);
+        showError('Failed to load relationship types');
+    }
+}
+
+async function loadDrivingOptions(metricType = 'general') {
+    try {
+        // Use different endpoint based on metric type
+        let endpoint = '/api/driving-options'; // Default general endpoint (if needed)
+        
+        if (metricType === 'leads') {
+            endpoint = '/api/leads-driving-options';
+        } else if (metricType === 'lags') {
+            endpoint = '/api/lags-driving-options';
+        } else if (metricType === 'excessive-lags') {
+            endpoint = '/api/excessive-lags-driving-options';
+        } else {
+            // For fs and non-fs, we can use the existing general free-float-options with metric_type
+            endpoint = '/api/driving-options';
+        }
+        
+        // Build query parameters
+        const params = new URLSearchParams();
+        
+        if (currentProjectId && currentProjectId !== '') {
+            params.append('project_id', currentProjectId);
+        }
+        
+        const relationshipType = document.getElementById('relationshipTypeFilter')?.value;
+        if (relationshipType && relationshipType !== 'all' && relationshipType !== '') {
+            params.append('relationship_type', relationshipType);
+        }
+        
+        const queryString = params.toString() ? '?' + params.toString() : '';
+        const response = await fetch(`${API_BASE}${endpoint}${queryString}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const drivingValues = await response.json();
+        const select = document.getElementById('drivingFilter');
+        const currentValue = select.value;
+        
+        // Clear existing options except "All Values"
+        select.innerHTML = '<option value="all">All Values</option>';
+        
+        // Add driving options
+        drivingValues.forEach(driving => {
+            const option = document.createElement('option');
+            option.value = driving.value;
+            option.textContent = driving.label;
+            select.appendChild(option);
+        });
+        
+        // Restore previous selection if it still exists
+        if (currentValue && Array.from(select.options).some(opt => opt.value === currentValue)) {
+            select.value = currentValue;
+        }
+        
+        console.log(`Loaded driving options for ${metricType}:`, drivingValues.length);
+    } catch (error) {
+        console.error('Error loading driving options:', error);
+        showError('Failed to load driving options');
+    }
+}
+
+async function loadFreeFloatOptions(metricType = 'general') {
+    try {
+        // Use different endpoint based on metric type
+        let endpoint = '/api/free-float-options'; // Default general endpoint
+        
+        if (metricType === 'leads') {
+            endpoint = '/api/leads-free-float-options';
+        } else if (metricType === 'lags') {
+            endpoint = '/api/lags-free-float-options';
+        } else if (metricType === 'excessive-lags') {
+            endpoint = '/api/excessive-lags-free-float-options';
+        } else {
+            // For fs and non-fs, use the existing endpoint with metric_type parameter
+            endpoint = '/api/free-float-options';
+        }
+        
+        // Build query parameters based on current filter state (excluding free float itself)
+        const params = new URLSearchParams();
+        
+        // Add metric type filter for general endpoint
+        if (metricType === 'fs' || metricType === 'non-fs') {
+            params.append('metric_type', metricType);
+        }
+        
+        // Add project filter
+        if (currentProjectId && currentProjectId !== '') {
+            params.append('project_id', currentProjectId);
+        }
+        
+        // Add relationship type filter  
+        const relationshipType = document.getElementById('relationshipTypeFilter')?.value;
+        if (relationshipType && relationshipType !== 'all' && relationshipType !== '') {
+            params.append('relationship_type', relationshipType);
+        }
+        
+        // Add driving filter
+        const driving = document.getElementById('drivingFilter')?.value;
+        if (driving && driving !== 'all' && driving !== '') {
+            params.append('driving', driving);
+        }
+        
+        const queryString = params.toString() ? '?' + params.toString() : '';
+        const response = await fetch(`${API_BASE}${endpoint}${queryString}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const freeFloatValues = await response.json();
+        const select = document.getElementById('freeFloatFilter');
+        const currentValue = select.value; // Preserve current selection if possible
+        
+        // Clear existing options except "All Values"
+        select.innerHTML = '<option value="all">All Values</option>';
+        
+        // Add free float options
+        freeFloatValues.forEach(float => {
+            const option = document.createElement('option');
+            option.value = float.value;
+            option.textContent = float.label;
+            select.appendChild(option);
+        });
+        
+        // Restore previous selection if it still exists
+        if (currentValue && Array.from(select.options).some(opt => opt.value === currentValue)) {
+            select.value = currentValue;
+        }
+        
+        console.log(`Loaded context-aware free float values for ${metricType}:`, freeFloatValues.length);
+    } catch (error) {
+        console.error('Error loading free float values:', error);
+        showError('Failed to load free float values');
+    }
+}
+
+async function selectMetric(metric) {
+    // Update UI state - remove all color borders and reset to transparent
     document.querySelectorAll('.metric-card').forEach(card => {
-        card.classList.remove('border-blue-500', 'border-green-500', 'border-orange-500', 'border-purple-500', 'border-red-500');
+        card.classList.remove('border-blue-500', 'border-green-500', 'border-orange-500', 'border-purple-500', 'border-red-500', 'border-indigo-500', 'border-pink-500', 'border-yellow-500', 'border-teal-500', 'border-cyan-500', 'border-rose-500', 'border-emerald-500', 'border-amber-500', 'border-violet-500');
         card.classList.add('border-transparent');
     });
     
     const selectedCard = document.querySelector(`[data-metric="${metric}"]`);
     if (selectedCard) {
         const colorMap = {
+            'fs': 'border-purple-500',
+            'non-fs': 'border-red-500',
+            'open-ends': 'border-indigo-500',
             'leads': 'border-blue-500',
             'lags': 'border-green-500',
             'excessive-lags': 'border-orange-500',
-            'fs': 'border-purple-500',
-            'non-fs': 'border-red-500'
+            'constraints': 'border-pink-500',
+            'excessive-durations': 'border-yellow-500',
+            'negative-total-float': 'border-teal-500',
+            'critical-total-float': 'border-cyan-500',
+            'excessive-total-float': 'border-rose-500',
+            'invalid-dates': 'border-emerald-500',
+            'riding-data-date': 'border-amber-500',
+            'resources': 'border-violet-500'
         };
-        selectedCard.classList.add(colorMap[metric]);
+        selectedCard.classList.add(colorMap[metric] || 'border-blue-500');
     }
     
     // Show content area and hide initial message
@@ -135,12 +384,69 @@ function selectMetric(metric) {
     document.getElementById('initial-message').classList.add('hidden');
     
     currentMetric = metric;
-    loadMetricData(metric);
+    
+    // Check if this metric has implemented functionality
+    const implementedMetrics = ['fs', 'non-fs', 'leads', 'lags', 'excessive-lags'];
+    
+    if (implementedMetrics.includes(metric)) {
+        // Load appropriate filter options based on metric
+        if (metric === 'fs') {
+            await Promise.all([
+                loadRelationshipTypes('fs'),
+                loadDrivingOptions('fs'),
+                loadFreeFloatOptions('fs')
+            ]);
+        } else if (metric === 'non-fs') {
+            await Promise.all([
+                loadRelationshipTypes('non-fs'),
+                loadDrivingOptions('non-fs'),
+                loadFreeFloatOptions('non-fs')
+            ]);
+        } else if (metric === 'leads') {
+            await Promise.all([
+                loadRelationshipTypes('leads'),
+                loadDrivingOptions('leads'),
+                loadFreeFloatOptions('leads')
+            ]);
+        } else if (metric === 'lags') {
+            await Promise.all([
+                loadRelationshipTypes('lags'),
+                loadDrivingOptions('lags'),
+                loadFreeFloatOptions('lags')
+            ]);
+        } else if (metric === 'excessive-lags') {
+            await Promise.all([
+                loadRelationshipTypes('excessive-lags'),
+                loadDrivingOptions('excessive-lags'),
+                loadFreeFloatOptions('excessive-lags')
+            ]);
+        }
+        
+        loadMetricData(metric);
+    } else {
+        // Show "Work in Progress" for non-implemented metrics
+        showWorkInProgress(metric);
+    }
 }
 
 async function loadMetricData(metric) {
     try {
         showLoading();
+        
+        // Check if PR_FS1 is selected for FS metric - skip API calls and show messages only
+        const relationshipType = document.getElementById('relationshipTypeFilter')?.value;
+        if (metric === 'fs' && relationshipType === 'PR_FS1') {
+            console.log('🚫 PR_FS1 selected - showing messages without API calls');
+            
+            // Show messages instead of loading data
+            updateKPISection(null, metric);
+            updateChartSection([], metric);
+            updateHistorySection([], metric);
+            updateTableSection([], metric);
+            
+            hideLoading();
+            return;
+        }
         
         // Load all metric data in parallel
         const [kpiData, chartData, historyData, tableData] = await Promise.all([
@@ -166,20 +472,52 @@ async function loadMetricData(metric) {
 
 async function fetchKPIData(metric) {
     const endpoint = getKPIEndpoint(metric);
-    const url = currentProjectId ? 
-        `${API_BASE}${endpoint}?project_id=${currentProjectId}` : 
-        `${API_BASE}${endpoint}`;
+    const queryParams = buildQueryParams();
+    const url = `${API_BASE}${endpoint}${queryParams}`;
     
+    console.log(`📊 Fetching KPI data for ${metric}:`, url);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch KPI data: ${response.status}`);
-    return response.json();
+    const data = await response.json();
+    console.log(`📊 KPI Response for ${metric}:`, data);
+    return data;
+}
+
+function buildQueryParams() {
+    const params = new URLSearchParams();
+    
+    // Project filter
+    if (currentProjectId && currentProjectId !== '') {
+        params.append('project_id', currentProjectId);
+    }
+    
+    // Relationship type filter
+    const relationshipType = document.getElementById('relationshipTypeFilter')?.value;
+    if (relationshipType && relationshipType !== 'all' && relationshipType !== '') {
+        params.append('relationship_type', relationshipType);
+    }
+    
+    // Driving filter
+    const driving = document.getElementById('drivingFilter')?.value;
+    if (driving && driving !== 'all' && driving !== '') {
+        params.append('driving', driving);
+    }
+    
+    // Free float filter
+    const freeFloat = document.getElementById('freeFloatFilter')?.value;
+    if (freeFloat && freeFloat !== 'all' && freeFloat !== '') {
+        params.append('free_float', freeFloat);
+    }
+    
+    const queryString = params.toString() ? '?' + params.toString() : '';
+    console.log('🔍 Query params:', queryString);
+    return queryString;
 }
 
 async function fetchChartData(metric) {
     const endpoint = getChartEndpoint(metric);
-    const url = currentProjectId ? 
-        `${API_BASE}${endpoint}?project_id=${currentProjectId}` : 
-        `${API_BASE}${endpoint}`;
+    const queryParams = buildQueryParams();
+    const url = `${API_BASE}${endpoint}${queryParams}`;
     
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch chart data: ${response.status}`);
@@ -188,9 +526,8 @@ async function fetchChartData(metric) {
 
 async function fetchHistoryData(metric) {
     const endpoint = getHistoryEndpoint(metric);
-    const url = currentProjectId ? 
-        `${API_BASE}${endpoint}?project_id=${currentProjectId}` : 
-        `${API_BASE}${endpoint}`;
+    const queryParams = buildQueryParams();
+    const url = `${API_BASE}${endpoint}${queryParams}`;
     
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch history data: ${response.status}`);
@@ -199,13 +536,16 @@ async function fetchHistoryData(metric) {
 
 async function fetchTableData(metric) {
     const endpoint = getTableEndpoint(metric);
-    const url = currentProjectId ? 
-        `${API_BASE}${endpoint}?project_id=${currentProjectId}&limit=20` : 
-        `${API_BASE}${endpoint}?limit=20`;
+    const queryParams = buildQueryParams();
+    const limitParam = queryParams ? '&limit=20' : '?limit=20';
+    const url = `${API_BASE}${endpoint}${queryParams}${limitParam}`;
     
+    console.log(`📋 Fetching table data for ${metric}:`, url);
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Failed to fetch table data: ${response.status}`);
-    return response.json();
+    const data = await response.json();
+    console.log(`📋 Table Response for ${metric}:`, data.length, 'rows');
+    return data;
 }
 
 function getKPIEndpoint(metric) {
@@ -255,12 +595,29 @@ function getTableEndpoint(metric) {
 
 function updateKPISection(data, metric) {
     const kpiSection = document.getElementById('kpi-section');
-    kpiSection.innerHTML = '';
+    const kpiGrid = kpiSection.querySelector('.grid');
+    kpiGrid.innerHTML = '';
+    
+    // Check if PR_FS1 is selected for FS metric AND if there's no data - show custom message
+    const relationshipType = document.getElementById('relationshipTypeFilter')?.value;
+    if (metric === 'fs' && relationshipType === 'PR_FS1' && (!data || Object.keys(data).length === 0 || data.Total_Relationship_Count === 0)) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center col-span-3';
+        messageDiv.innerHTML = `
+            <div class="text-yellow-800">
+                <i class="fas fa-info-circle text-yellow-600 mr-2"></i>
+                PR_FS1 relationship type is currently not available in the database. 
+                Please select PR_FS to view FS+0d activities.
+            </div>
+        `;
+        kpiGrid.appendChild(messageDiv);
+        return;
+    }
     
     const kpiCards = getKPICards(data, metric);
     kpiCards.forEach(card => {
         const cardElement = createKPICard(card);
-        kpiSection.appendChild(cardElement);
+        kpiGrid.appendChild(cardElement);
     });
 }
 
@@ -268,38 +625,33 @@ function getKPICards(data, metric) {
     switch (metric) {
         case 'leads':
             return [
-                { title: 'Total Relationships', value: data.Total_Relationship_Count || 0, icon: 'fas fa-list', color: 'blue' },
-                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0, icon: 'fas fa-exclamation-triangle', color: 'red' },
-                { title: 'Leads', value: data.Leads_Count || 0, icon: 'fas fa-calendar', color: 'green' },
-                { title: 'Lead Percentage', value: (data.Lead_Percentage || 0).toFixed(2) + '%', icon: 'fas fa-arrow-right', color: 'purple' }
+                { title: 'Leads Count', value: data.Leads_Count || 0 },
+                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0 },
+                { title: 'Lead %', value: (data.Lead_Percentage || 0).toFixed(2) + '%' }
             ];
         case 'lags':
             return [
-                { title: 'Total Relationships', value: data.Total_Relationship_Count || 0, icon: 'fas fa-list', color: 'blue' },
-                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0, icon: 'fas fa-exclamation-triangle', color: 'red' },
-                { title: 'Lags', value: data.Lags_Count || 0, icon: 'fas fa-clock', color: 'green' },
-                { title: 'Lag Percentage', value: (data.Lag_Percentage || 0).toFixed(2) + '%', icon: 'fas fa-chart-line', color: 'purple' }
+                { title: 'Lag Count', value: data.Lag_Count || 0 },
+                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0 },
+                { title: 'Lag %', value: (data.Lag_Percentage || 0).toFixed(2) + '%' }
             ];
         case 'excessive-lags':
             return [
-                { title: 'Total Relationships', value: data.Total_Relationship_Count || 0, icon: 'fas fa-list', color: 'blue' },
-                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0, icon: 'fas fa-exclamation-triangle', color: 'red' },
-                { title: 'Excessive Lags', value: data.ExcessiveLags_Count || 0, icon: 'fas fa-clock', color: 'orange' },
-                { title: 'Excessive Lag %', value: (data.ExcessiveLag_Percentage || 0).toFixed(2) + '%', icon: 'fas fa-percentage', color: 'purple' }
+                { title: 'Lag Count', value: data.Lag_Count || 0 },
+                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0 },
+                { title: 'Lag %', value: (data.Lag_Percentage || 0).toFixed(2) + '%' }
             ];
         case 'fs':
             return [
-                { title: 'Total Relationships', value: data.Total_Relationship_Count || 0, icon: 'fas fa-list', color: 'blue' },
-                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0, icon: 'fas fa-exclamation-triangle', color: 'red' },
-                { title: 'FS+0d', value: data.FS_Count || 0, icon: 'fas fa-link', color: 'green' },
-                { title: 'FS+0d Percentage', value: (data.FS_Percentage || 0).toFixed(2) + '%', icon: 'fas fa-percentage', color: 'purple' }
+                { title: 'Total Relationships', value: data.Total_Relationship_Count || 0 },
+                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0 },
+                { title: 'Lags', value: data.Lag_Count || 0 }
             ];
         case 'non-fs':
             return [
-                { title: 'Total Relationships', value: data.Total_Relationship_Count || 0, icon: 'fas fa-list', color: 'blue' },
-                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0, icon: 'fas fa-exclamation-triangle', color: 'red' },
-                { title: 'Non FS+0d', value: data.NonFS_Count || 0, icon: 'fas fa-link', color: 'orange' },
-                { title: 'Non FS+0d %', value: (data.NonFS_Percentage || 0).toFixed(2) + '%', icon: 'fas fa-percentage', color: 'purple' }
+                { title: 'Total Relationships', value: data.Total_Relationship_Count || 0 },
+                { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0 },
+                { title: 'Lags', value: data.Lag_Count || 0 }
             ];
         default:
             return [];
@@ -308,16 +660,11 @@ function getKPICards(data, metric) {
 
 function createKPICard(card) {
     const div = document.createElement('div');
-    div.className = 'bg-white rounded-lg shadow p-6';
+    div.className = 'bg-white rounded-lg shadow p-3';
     div.innerHTML = `
-        <div class="flex items-center">
-            <div class="bg-${card.color}-100 p-3 rounded-full">
-                <i class="${card.icon} text-${card.color}-600 text-xl"></i>
-            </div>
-            <div class="ml-4">
-                <h3 class="text-gray-500 text-sm">${card.title}</h3>
-                <p class="text-xl font-semibold text-gray-800">${card.value}</p>
-            </div>
+        <div class="text-center">
+            <h3 class="text-gray-500 text-xs font-medium mb-1">${card.title}</h3>
+            <p class="text-lg font-semibold text-gray-800">${card.value}</p>
         </div>
     `;
     return div;
@@ -328,8 +675,40 @@ function updateChartSection(data, metric) {
         currentChart.destroy();
     }
     
-    const ctx = document.getElementById('metric-chart').getContext('2d');
+    const chartContainer = document.querySelector('#chart-section .chart-container');
+    if (!chartContainer) return;
+    
+    // Check if PR_FS1 is selected for FS metric - always show message for PR_FS1
+    const relationshipType = document.getElementById('relationshipTypeFilter')?.value;
+    if (metric === 'fs' && relationshipType === 'PR_FS1') {
+        chartContainer.innerHTML = `
+            <div class="flex items-center justify-center h-64 text-gray-500">
+                <div class="text-center">
+                    <svg class="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    <p class="text-lg font-medium">PR_FS1 data not available</p>
+                    <p class="text-sm">Please select PR_FS to view chart data</p>
+                </div>
+            </div>
+        `;
+        return;
+    }
+    
+    // Always ensure the chart container is properly reset with canvas
+    chartContainer.innerHTML = '<canvas id="metric-chart"></canvas>';
+    const canvas = document.getElementById('metric-chart');
+    
+    if (canvas) {
+        // Make sure canvas is visible and properly positioned
+        canvas.style.display = 'block';
+        canvas.style.position = 'relative';
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+        
+        const ctx = canvas.getContext('2d');
     currentChart = createChart(ctx, data, metric);
+    }
 }
 
 function updateHistorySection(data, metric) {
@@ -556,7 +935,15 @@ function updateTableSection(data, metric) {
     tableBody.innerHTML = '';
     
     if (!Array.isArray(data) || data.length === 0) {
-        tableBody.innerHTML = '<tr><td colspan="100%" class="text-center py-4 text-gray-500">No data available</td></tr>';
+        // Check if PR_FS1 is selected for FS metric - show custom message
+        const relationshipType = document.getElementById('relationshipTypeFilter')?.value;
+        let message = 'No data available for the current filter selection';
+        
+        if (metric === 'fs' && relationshipType === 'PR_FS1') {
+            message = 'PR_FS1 relationship type is currently not available in the database. Please select PR_FS to view FS+0d activities.';
+        }
+        
+        tableBody.innerHTML = `<tr><td colspan="100%" class="text-center py-4 text-gray-500">${message}</td></tr>`;
         return;
     }
     
@@ -765,6 +1152,36 @@ function downloadCSV(csv, filename) {
     document.body.removeChild(link);
 }
 
+function clearAllFilters() {
+    document.getElementById('projectFilter').value = '';
+    document.getElementById('relationshipTypeFilter').value = 'all';
+    document.getElementById('drivingFilter').value = 'all';
+    document.getElementById('freeFloatFilter').value = 'all';
+    currentProjectId = '';
+}
+
+function updateActiveFiltersCount() {
+    let activeCount = 0;
+    
+    // Count active filters
+    if (currentProjectId) activeCount++;
+    if (document.getElementById('relationshipTypeFilter')?.value !== 'all') activeCount++;
+    if (document.getElementById('drivingFilter')?.value !== 'all') activeCount++;
+    if (document.getElementById('freeFloatFilter')?.value !== 'all') activeCount++;
+    
+    // Update display
+    const countElement = document.getElementById('activeFiltersCount');
+    if (countElement) {
+        if (activeCount === 0) {
+            countElement.textContent = 'No active filters';
+            countElement.className = 'text-sm text-gray-600';
+        } else {
+            countElement.textContent = `${activeCount} active filter${activeCount > 1 ? 's' : ''}`;
+            countElement.className = 'text-sm text-blue-600 font-medium';
+        }
+    }
+}
+
 // Utility functions
 function showLoading() {
     // Could add a loading spinner here
@@ -774,6 +1191,91 @@ function showLoading() {
 function hideLoading() {
     // Hide loading spinner
     console.log('Loading complete');
+}
+
+function showWorkInProgress(metric) {
+    // Clear existing content and show work in progress message
+    const kpiSection = document.getElementById('kpi-section');
+    const kpiGrid = kpiSection.querySelector('.grid');
+    kpiGrid.innerHTML = '';
+    
+    // Show work in progress message in KPI section
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'bg-blue-50 border border-blue-200 rounded-lg p-6 text-center col-span-3';
+    messageDiv.innerHTML = `
+        <div class="text-blue-800">
+            <i class="fas fa-tools text-blue-600 mr-2 text-2xl"></i>
+            <h3 class="text-lg font-semibold mb-2">Work in Progress</h3>
+            <p class="text-sm">This metric is currently under development and will be available soon.</p>
+        </div>
+    `;
+    kpiGrid.appendChild(messageDiv);
+    
+    // Clear chart section
+    const chartContainer = document.querySelector('#chart-section .chart-container');
+    if (chartContainer) {
+        chartContainer.innerHTML = `
+            <div class="flex items-center justify-center h-64 text-gray-500">
+                <div class="text-center">
+                    <i class="fas fa-chart-bar text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-lg font-medium">Chart Coming Soon</p>
+                    <p class="text-sm">Visualization will be available once the metric is implemented</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Clear history section
+    const historyContainer = document.querySelector('#history-section .chart-container');
+    if (historyContainer) {
+        historyContainer.innerHTML = `
+            <div class="flex items-center justify-center h-64 text-gray-500">
+                <div class="text-center">
+                    <i class="fas fa-chart-line text-4xl text-gray-400 mb-4"></i>
+                    <p class="text-lg font-medium">History Coming Soon</p>
+                    <p class="text-sm">Trend analysis will be available once the metric is implemented</p>
+                </div>
+            </div>
+        `;
+    }
+    
+    // Clear table section
+    const tableSection = document.getElementById('table-section');
+    const tableBody = document.getElementById('table-body');
+    const tableHead = document.getElementById('table-head');
+    
+    if (tableHead) {
+        tableHead.innerHTML = `
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            </tr>
+        `;
+    }
+    
+    if (tableBody) {
+        tableBody.innerHTML = `
+            <tr>
+                <td class="px-6 py-4 whitespace-nowrap text-center">
+                    <div class="text-gray-500">
+                        <i class="fas fa-table text-2xl text-gray-400 mb-2"></i>
+                        <p class="text-sm font-medium">Data Table Coming Soon</p>
+                        <p class="text-xs">Detailed data will be available once the metric is implemented</p>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+    
+    // Destroy any existing charts
+    if (currentChart) {
+        currentChart.destroy();
+        currentChart = null;
+    }
+    
+    if (currentHistoryChart) {
+        currentHistoryChart.destroy();
+        currentHistoryChart = null;
+    }
 }
 
 function showError(message) {

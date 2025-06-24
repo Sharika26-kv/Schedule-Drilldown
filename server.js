@@ -353,7 +353,8 @@ app.get('/chat', (req, res) => {
 
 // Define the database path
 // const dbPath = path.join(__dirname, 'database', 'primavera_p6.db'); // Old relative path
-const dbPath = './database/mydata.db'; // Database file in repository
+// const dbPath = './database/mydata.db'; // Database file in repository
+const dbPath = 'C:/Users/kvsha/Desktop/New folder (3)/mydata.db'; // Correct database with ActivityRelationshipView
 
 // Ensure the directory exists (optional, but good practice)
 const dbDir = path.dirname(dbPath);
@@ -1701,78 +1702,87 @@ app.get('/api/schedule/projects', async (req, res) => {
 // Leads KPI endpoint
 app.get('/api/schedule/leads-kpi', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        // For Leads_Count (Card 1) - apply leads base filters + user filters
+        // Base filters: Relationship_Status = 'Incomplete' AND Lag < 0
+        const { filters: leadsFilters, params: leadsParams } = buildScheduleFilters(req);
+        leadsFilters.push("Lag < 0");
+        const leadsWhereClause = 'WHERE ' + leadsFilters.join(' AND ');
         
-        // Build filters for leads calculation (Lag < 0 and Relationship_Status = 'Incomplete')
-        let leadsFilters = ["Relationship_Status = 'Incomplete'", "Lag < 0"];
-        let remainingFilters = ["Relationship_Status = 'Incomplete'"];
-        let totalFilters = [];
-        
-        const leadsParams = [];
+        // For Remaining_Relationship_Count (Card 2) - apply base filters + user filters excluding RelationshipType, Lag, ExcessiveLag, Lag(bins)
+        // Base filters: Relationship_Status = 'Incomplete' only (NO lag filter for remaining relationships)
+        const remainingFilters = [];
         const remainingParams = [];
-        const totalParams = [];
         
-        if (projectId && projectId !== 'all') {
-            leadsFilters.push('Project_ID = ?');
+        // Base filter for remaining relationships (only incomplete status)
+        remainingFilters.push("Relationship_Status = 'Incomplete'");
+        
+        // Project filter
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
             remainingFilters.push('Project_ID = ?');
-            totalFilters.push('Project_ID = ?');
-            leadsParams.push(projectId);
-            remainingParams.push(projectId);
-            totalParams.push(projectId);
+            remainingParams.push(req.query.project_id.toString());
         }
         
-        const leadsWhere = leadsFilters.length > 0 ? 'WHERE ' + leadsFilters.join(' AND ') : '';
-        const remainingWhere = remainingFilters.length > 0 ? 'WHERE ' + remainingFilters.join(' AND ') : '';
-        const totalWhere = totalFilters.length > 0 ? 'WHERE ' + totalFilters.join(' AND ') : '';
+        // User-selected filters for Remaining (excluding RelationshipType, Lag, ExcessiveLag, Lag(bins))
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                remainingFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                remainingFilters.push("Driving = 'N'");
+            }
+        }
         
-        // Get leads count
-        const leadsQuery = `SELECT COUNT(*) as leads_count FROM ActivityRelationshipView ${leadsWhere}`;
-        const leadsResult = await new Promise((resolve, reject) => {
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            remainingFilters.push('FreeFloat = ?');
+            remainingParams.push(parseFloat(req.query.free_float));
+        }
+        
+        const remainingWhereClause = 'WHERE ' + remainingFilters.join(' AND ');
+        
+        // Query for Leads_Count (Card 1)
+        const leadsQuery = `
+            SELECT COUNT(*) as Leads_Count
+            FROM ActivityRelationshipView
+            ${leadsWhereClause}
+        `;
+        
+        // Query for Remaining_Relationship_Count (Card 2)
+        const remainingQuery = `
+            SELECT COUNT(*) as Remaining_Relationship_Count
+            FROM ActivityRelationshipView
+            ${remainingWhereClause}
+        `;
+
+        const [leadsResult, remainingResult] = await Promise.all([
+            new Promise((resolve, reject) => {
             db.get(leadsQuery, leadsParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in leads count:', err);
-                    resolve({ leads_count: 0 });
+                        console.error('[Schedule API] Error in leads-kpi leads:', err);
+                        resolve({ Leads_Count: 0 });
                     return;
                 }
-                resolve(row || { leads_count: 0 });
-            });
-        });
-        
-        // Get remaining relationships count
-        const remainingQuery = `SELECT COUNT(*) as remaining_count FROM ActivityRelationshipView ${remainingWhere}`;
-        const remainingResult = await new Promise((resolve, reject) => {
+                    resolve(row || { Leads_Count: 0 });
+                });
+            }),
+            new Promise((resolve, reject) => {
             db.get(remainingQuery, remainingParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in remaining count:', err);
-                    resolve({ remaining_count: 0 });
+                        console.error('[Schedule API] Error in leads-kpi remaining:', err);
+                        resolve({ Remaining_Relationship_Count: 0 });
                     return;
                 }
-                resolve(row || { remaining_count: 0 });
-            });
-        });
+                    resolve(row || { Remaining_Relationship_Count: 0 });
+                });
+            })
+        ]);
         
-        // Get total relationships count
-        const totalQuery = `SELECT COUNT(*) as total_count FROM ActivityRelationshipView ${totalWhere}`;
-        const totalResult = await new Promise((resolve, reject) => {
-            db.get(totalQuery, totalParams, (err, row) => {
-                if (err) {
-                    console.error('[Schedule API] Error in total count:', err);
-                    resolve({ total_count: 0 });
-                    return;
-                }
-                resolve(row || { total_count: 0 });
-            });
-        });
-        
-        const leadsCount = leadsResult.leads_count || 0;
-        const remainingCount = remainingResult.remaining_count || 0;
-        const totalCount = totalResult.total_count || 0;
+        // Calculate Lead Percentage (Card 3)
+        const leadsCount = leadsResult.Leads_Count || 0;
+        const remainingCount = remainingResult.Remaining_Relationship_Count || 0;
         const leadPercentage = remainingCount > 0 ? Math.round((leadsCount * 100.0) / remainingCount * 100) / 100 : 0;
         
         res.json({
-            Total_Relationship_Count: totalCount,
-            Remaining_Relationship_Count: remainingCount,
             Leads_Count: leadsCount,
+            Remaining_Relationship_Count: remainingCount,
             Lead_Percentage: leadPercentage
         });
     } catch (error) {
@@ -1784,17 +1794,12 @@ app.get('/api/schedule/leads-kpi', async (req, res) => {
 // Leads chart data endpoint
 app.get('/api/schedule/leads-chart-data', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         
-        let filters = ["Relationship_Status = 'Incomplete'", "Lag < 0"];
-        const params = [];
+        // Add leads-specific filters
+        filters.push("Lag < 0");
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
-        
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT 
@@ -1879,18 +1884,13 @@ app.get('/api/schedule/leads-percentage-history', async (req, res) => {
 // Leads table data endpoint
 app.get('/api/schedule/leads', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         const limit = req.query.limit || 20;
         
-        let filters = ["Relationship_Status = 'Incomplete'", "Lag < 0"];
-        const params = [];
+        // Add leads-specific filters
+        filters.push("Lag < 0");
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
-        
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT
@@ -1934,67 +1934,87 @@ app.get('/api/schedule/leads', async (req, res) => {
 // Lags KPI endpoint
 app.get('/api/schedule/lags-kpi', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        // For Lag_Count (Card 1) - apply lags base filters + user filters
+        // Base filters: Relationship_Status = 'Incomplete' AND Lag > 0
+        const { filters: lagFilters, params: lagParams } = buildScheduleFilters(req);
+        lagFilters.push("Lag > 0");
+        const lagWhereClause = 'WHERE ' + lagFilters.join(' AND ');
         
-        let filters = ["Relationship_Status = 'Incomplete'", "Lag != 0", "Lag IS NOT NULL"];
-        const params = [];
+        // For Remaining_Relationship_Count (Card 2) - apply base filters + user filters excluding RelationshipType, Lag, ExcessiveLag, Lag(bins)
+        // Base filters: Relationship_Status = 'Incomplete' only (NO lag filter for remaining relationships)
+        const remainingFilters = [];
+        const remainingParams = [];
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
+        // Base filter for remaining relationships (only incomplete status)
+        remainingFilters.push("Relationship_Status = 'Incomplete'");
+        
+        // Project filter
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            remainingFilters.push('Project_ID = ?');
+            remainingParams.push(req.query.project_id.toString());
         }
         
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        // User-selected filters for Remaining (excluding RelationshipType, Lag, ExcessiveLag, Lag(bins))
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                remainingFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                remainingFilters.push("Driving = 'N'");
+            }
+        }
         
-        const query = `
-            SELECT
-                COUNT(*) as lags_count,
-                SUM(CASE WHEN CAST(Lag AS REAL) > 0 THEN 1 ELSE 0 END) as positive_lags,
-                AVG(CAST(Lag AS REAL)) as avg_lag_days
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            remainingFilters.push('FreeFloat = ?');
+            remainingParams.push(parseFloat(req.query.free_float));
+        }
+        
+        const remainingWhereClause = 'WHERE ' + remainingFilters.join(' AND ');
+        
+        // Query for Lag_Count (Card 1)
+        const lagQuery = `
+            SELECT COUNT(*) as Lag_Count
             FROM ActivityRelationshipView
-            ${whereClause}
+            ${lagWhereClause}
         `;
         
-        const result = await new Promise((resolve, reject) => {
-            db.get(query, params, (err, row) => {
+        // Query for Remaining_Relationship_Count (Card 2)
+        const remainingQuery = `
+            SELECT COUNT(*) as Remaining_Relationship_Count
+            FROM ActivityRelationshipView
+            ${remainingWhereClause}
+        `;
+
+        const [lagResult, remainingResult] = await Promise.all([
+            new Promise((resolve, reject) => {
+                db.get(lagQuery, lagParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in lags-kpi:', err);
-                    resolve({ lags_count: 0, positive_lags: 0, avg_lag_days: 0 });
+                        console.error('[Schedule API] Error in lags-kpi lag:', err);
+                        resolve({ Lag_Count: 0 });
                     return;
                 }
-                resolve(row || { lags_count: 0, positive_lags: 0, avg_lag_days: 0 });
-            });
-        });
-        
-        // Get remaining relationships for percentage calculation
-        let remainingFilters = ["Relationship_Status = 'Incomplete'"];
-        const remainingParams = [];
-        if (projectId && projectId !== 'all') {
-            remainingFilters.push('Project_ID = ?');
-            remainingParams.push(projectId);
-        }
-        const remainingWhere = remainingFilters.length > 0 ? 'WHERE ' + remainingFilters.join(' AND ') : '';
-        
-        const remainingQuery = `SELECT COUNT(*) as remaining_count FROM ActivityRelationshipView ${remainingWhere}`;
-        const remainingResult = await new Promise((resolve, reject) => {
+                    resolve(row || { Lag_Count: 0 });
+                });
+            }),
+            new Promise((resolve, reject) => {
             db.get(remainingQuery, remainingParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in remaining count for lags:', err);
-                    resolve({ remaining_count: 0 });
+                        console.error('[Schedule API] Error in lags-kpi remaining:', err);
+                        resolve({ Remaining_Relationship_Count: 0 });
                     return;
                 }
-                resolve(row || { remaining_count: 0 });
-            });
-        });
+                    resolve(row || { Remaining_Relationship_Count: 0 });
+                });
+            })
+        ]);
         
-        const lagsCount = result.lags_count || 0;
-        const remainingCount = remainingResult.remaining_count || 0;
-        const lagPercentage = remainingCount > 0 ? Math.round((lagsCount * 100.0) / remainingCount * 100) / 100 : 0;
+        // Calculate Lag Percentage (Card 3)
+        const lagCount = lagResult.Lag_Count || 0;
+        const remainingCount = remainingResult.Remaining_Relationship_Count || 0;
+        const lagPercentage = remainingCount > 0 ? Math.round((lagCount * 100.0) / remainingCount * 100) / 100 : 0;
         
         res.json({
-            Total_Relationship_Count: remainingCount,
+            Lag_Count: lagCount,
             Remaining_Relationship_Count: remainingCount,
-            Lags_Count: lagsCount,
             Lag_Percentage: lagPercentage
         });
     } catch (error) {
@@ -2006,18 +2026,13 @@ app.get('/api/schedule/lags-kpi', async (req, res) => {
 // Lags data endpoint
 app.get('/api/schedule/lags', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         const limit = req.query.limit || 20;
         
-        let filters = ["Relationship_Status = 'Incomplete'", "Lag != 0", "Lag IS NOT NULL"];
-        const params = [];
+        // Add lag-specific filters
+        filters.push("Lag > 0");
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
-        
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT
@@ -2061,17 +2076,12 @@ app.get('/api/schedule/lags', async (req, res) => {
 // Lags chart data endpoint
 app.get('/api/schedule/lags-chart-data', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         
-        let filters = ["Relationship_Status = 'Incomplete'", "Lag != 0", "Lag IS NOT NULL"];
-        const params = [];
+        // Add lag-specific filters
+        filters.push("Lag > 0");
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
-        
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT 
@@ -2156,67 +2166,89 @@ app.get('/api/schedule/lags-percentage-history', async (req, res) => {
 // Excessive Lags KPI endpoint
 app.get('/api/schedule/excessive-lags-kpi', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        // For Lag_Count (Card 1) - apply excessive lags base filters + user filters
+        // Base filters: Relationship_Status = 'Incomplete' AND ExcessiveLag = 'Excessive Lag' AND Lag > 0
+        const { filters: lagFilters, params: lagParams } = buildScheduleFilters(req);
+        lagFilters.push("ExcessiveLag = 'Excessive Lag'");
+        lagFilters.push("Lag > 0");
+        const lagWhereClause = 'WHERE ' + lagFilters.join(' AND ');
         
-        let filters = ["Relationship_Status = 'Incomplete'", "ExcessiveLag > 0"];
-        const params = [];
+        // For Remaining_Relationship_Count (Card 2) - apply base filters + user filters excluding RelationshipType, Lag, ExcessiveLag, Lag(bins)
+        // Base filters: Relationship_Status = 'Incomplete' only
+        const remainingFilters = [];
+        const remainingParams = [];
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
+        // Base filter for remaining relationships
+        remainingFilters.push("Relationship_Status = 'Incomplete'");
+        
+        // Project filter
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            remainingFilters.push('Project_ID = ?');
+            remainingParams.push(req.query.project_id.toString());
         }
         
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        // User-selected filters for Remaining (excluding RelationshipType, Lag, ExcessiveLag, Lag(bins))
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                remainingFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                remainingFilters.push("Driving = 'N'");
+            }
+        }
         
-        const query = `
-            SELECT
-                COUNT(*) as excessive_lags_count,
-                AVG(CAST(ExcessiveLag AS REAL)) as avg_excessive_lag
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            remainingFilters.push('FreeFloat = ?');
+            remainingParams.push(parseFloat(req.query.free_float));
+        }
+        
+        const remainingWhereClause = 'WHERE ' + remainingFilters.join(' AND ');
+        
+        // Query for Lag_Count (Card 1)
+        const lagQuery = `
+            SELECT COUNT(*) as Lag_Count
             FROM ActivityRelationshipView
-            ${whereClause}
+            ${lagWhereClause}
         `;
         
-        const result = await new Promise((resolve, reject) => {
-            db.get(query, params, (err, row) => {
+        // Query for Remaining_Relationship_Count (Card 2)
+        const remainingQuery = `
+            SELECT COUNT(*) as Remaining_Relationship_Count
+            FROM ActivityRelationshipView
+            ${remainingWhereClause}
+        `;
+
+        const [lagResult, remainingResult] = await Promise.all([
+            new Promise((resolve, reject) => {
+                db.get(lagQuery, lagParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in excessive lags KPI:', err);
-                    resolve({ excessive_lags_count: 0, avg_excessive_lag: 0 });
+                        console.error('[Schedule API] Error in excessive-lags-kpi lag:', err);
+                        resolve({ Lag_Count: 0 });
                     return;
                 }
-                resolve(row || { excessive_lags_count: 0, avg_excessive_lag: 0 });
-            });
-        });
-        
-        // Get remaining relationships for percentage calculation
-        let remainingFilters = ["Relationship_Status = 'Incomplete'"];
-        const remainingParams = [];
-        if (projectId && projectId !== 'all') {
-            remainingFilters.push('Project_ID = ?');
-            remainingParams.push(projectId);
-        }
-        const remainingWhere = remainingFilters.length > 0 ? 'WHERE ' + remainingFilters.join(' AND ') : '';
-        
-        const remainingQuery = `SELECT COUNT(*) as remaining_count FROM ActivityRelationshipView ${remainingWhere}`;
-        const remainingResult = await new Promise((resolve, reject) => {
+                    resolve(row || { Lag_Count: 0 });
+                });
+            }),
+            new Promise((resolve, reject) => {
             db.get(remainingQuery, remainingParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in remaining count for excessive lags:', err);
-                    resolve({ remaining_count: 0 });
+                        console.error('[Schedule API] Error in excessive-lags-kpi remaining:', err);
+                        resolve({ Remaining_Relationship_Count: 0 });
                     return;
                 }
-                resolve(row || { remaining_count: 0 });
-            });
-        });
+                    resolve(row || { Remaining_Relationship_Count: 0 });
+                });
+            })
+        ]);
         
-        const excessiveLagsCount = result.excessive_lags_count || 0;
-        const remainingCount = remainingResult.remaining_count || 0;
-        const excessiveLagPercentage = remainingCount > 0 ? Math.round((excessiveLagsCount * 100.0) / remainingCount * 100) / 100 : 0;
+        // Calculate Lag Percentage (Card 3)
+        const lagCount = lagResult.Lag_Count || 0;
+        const remainingCount = remainingResult.Remaining_Relationship_Count || 0;
+        const lagPercentage = remainingCount > 0 ? Math.round((lagCount * 100.0) / remainingCount * 100) / 100 : 0;
         
         res.json({
-            Total_Relationship_Count: remainingCount,
+            Lag_Count: lagCount,
             Remaining_Relationship_Count: remainingCount,
-            ExcessiveLags_Count: excessiveLagsCount,
-            ExcessiveLag_Percentage: excessiveLagPercentage
+            Lag_Percentage: lagPercentage
         });
     } catch (error) {
         console.error('[Schedule API] Error in excessive lags KPI endpoint:', error);
@@ -2227,18 +2259,13 @@ app.get('/api/schedule/excessive-lags-kpi', async (req, res) => {
 // Excessive Lags data endpoint
 app.get('/api/schedule/excessive-lags', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         const limit = req.query.limit || 20;
         
-        let filters = ["Relationship_Status = 'Incomplete'", "ExcessiveLag > 0"];
-        const params = [];
+        // Add excessive lags-specific filters
+        filters.push("ExcessiveLag = 'Excessive Lag'");
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
-        
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT
@@ -2282,17 +2309,12 @@ app.get('/api/schedule/excessive-lags', async (req, res) => {
 // Excessive Lags chart data endpoint
 app.get('/api/schedule/excessive-lags-chart-data', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         
-        let filters = ["Relationship_Status = 'Incomplete'", "ExcessiveLag = 'Excessive Lag'"];
-        const params = [];
+        // Add excessive lags-specific filters
+        filters.push("ExcessiveLag = 'Excessive Lag'");
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
-        
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT 
@@ -2711,46 +2733,240 @@ app.get('/api/schedule/excessive-lags-line-chart', async (req, res) => {
     }
 });
 
+// Helper function to build common filters
+function buildScheduleFilters(req) {
+    const filters = [];
+    const params = [];
+    
+    // Base filter - always include incomplete relationships
+    filters.push("Relationship_Status = 'Incomplete'");
+    
+    // Project filter - ensure we're filtering by correct column and value
+    if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+        filters.push('Project_ID = ?');
+        params.push(req.query.project_id.toString());
+    }
+    
+    // Relationship Type filter (PR_FS, PR_FS1, etc.)
+    if (req.query.relationship_type && req.query.relationship_type !== 'all' && req.query.relationship_type !== '') {
+        // Special handling for PR_FS1 - since it doesn't exist in database, create impossible condition
+        if (req.query.relationship_type === 'PR_FS1') {
+            filters.push("RelationshipType = 'PR_FS1'"); // This will return no results
+            // No need to add to params since it won't match anything
+        } else if (req.query.relationship_type.includes(',')) {
+            const types = req.query.relationship_type.split(',');
+            // Filter out PR_FS1 for actual database query but keep others
+            const validTypes = types.filter(type => type !== 'PR_FS1');
+            if (validTypes.length > 0) {
+                filters.push(`RelationshipType IN (${'?,'.repeat(validTypes.length).slice(0, -1)})`);
+                params.push(...validTypes);
+            }
+            // If PR_FS1 is included, add impossible condition
+            if (types.includes('PR_FS1')) {
+                filters.push("RelationshipType = 'PR_FS1'");
+            }
+        } else {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+    }
+    
+    // Driving filter
+    if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+        if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+            filters.push("Driving = 'Y'");
+        } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+            filters.push("Driving = 'N'");
+        }
+    }
+    
+    // Free Float filter
+    if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+        filters.push('FreeFloat = ?');
+        params.push(parseFloat(req.query.free_float));
+    }
+    
+    return { filters, params };
+}
+
 // FS+0d KPI endpoint
 app.get('/api/schedule/fs-kpi', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        // For Total_Relationship_Count - apply FS+0d base filters + user filters (excluding RelationshipType)
+        const totalFilters = [];
+        const totalParams = [];
         
-        let filters = [];
-        const params = [];
+        // FS+0d base filters for Total_Relationship_Count (excluding Lag to differentiate from Remaining)
+        totalFilters.push("Relationship_Status = ?");
+        totalFilters.push("RelationshipType IN (?, ?)");
+        totalParams.push('Incomplete', 'PR_FS', 'PR_FS1');
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
+        // Project filter
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            totalFilters.push('Project_ID = ?');
+            totalParams.push(req.query.project_id.toString());
         }
         
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        // User-selected filters for Total_Relationship_Count (excluding RelationshipType)
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                totalFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                totalFilters.push("Driving = 'N'");
+            }
+        }
         
-        const query = `
-            SELECT
-                COUNT(*) as Total_Relationship_Count,
-                COUNT(*) - SUM(CASE WHEN RelationshipType = 'PR_FS' AND Lag = 0 THEN 1 ELSE 0 END) as Remaining_Relationship_Count,
-                SUM(CASE WHEN RelationshipType = 'PR_FS' AND Lag = 0 THEN 1 ELSE 0 END) as FS_Count,
-                ROUND(
-                    (SUM(CASE WHEN RelationshipType = 'PR_FS' AND Lag = 0 THEN 1 ELSE 0 END) * 100.0) / COUNT(*), 
-                    2
-                ) as FS_Percentage
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            totalFilters.push('FreeFloat = ?');
+            totalParams.push(parseFloat(req.query.free_float));
+        }
+        
+        const totalWhereClause = 'WHERE ' + totalFilters.join(' AND ');
+        
+        // For Remaining_Relationship_Count - apply FS+0d base filters + user filters (excluding RelationshipType, Lag, ExcessiveLag, Lag(bins))
+        const remainingFilters = [];
+        const remainingParams = [];
+        
+        // FS+0d base filters for Remaining_Relationship_Count
+        remainingFilters.push("Relationship_Status = ?");
+        remainingFilters.push("RelationshipType IN (?, ?)");
+        remainingFilters.push("Lag = ?");
+        remainingParams.push('Incomplete', 'PR_FS', 'PR_FS1', 0);
+        
+        // Project filter for Remaining
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            remainingFilters.push('Project_ID = ?');
+            remainingParams.push(req.query.project_id.toString());
+        }
+        
+        // User filters for Remaining (excluding RelationshipType, Lag, ExcessiveLag, Lag(bins))
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                remainingFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                remainingFilters.push("Driving = 'N'");
+            }
+        }
+        
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            remainingFilters.push('FreeFloat = ?');
+            remainingParams.push(parseFloat(req.query.free_float));
+        }
+        
+        const remainingWhereClause = 'WHERE ' + remainingFilters.join(' AND ');
+        
+        // For Lag_Count (3rd card) - apply base FS+0d filters + user filters + Lag > 0
+        const lagFilters = [];
+        const lagParams = [];
+        
+        // Base FS+0d filters for Lag_Count
+        lagFilters.push("Relationship_Status = ?");
+        lagFilters.push("RelationshipType IN (?, ?)");
+        lagFilters.push("Lag = ?");
+        lagParams.push('Incomplete', 'PR_FS', 'PR_FS1', 0);
+        
+        // Project filter for Lag_Count
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            lagFilters.push('Project_ID = ?');
+            lagParams.push(req.query.project_id.toString());
+        }
+        
+        // User-selected filters for Lag_Count
+        if (req.query.relationship_type && req.query.relationship_type !== 'all' && req.query.relationship_type !== '') {
+            if (req.query.relationship_type === 'PR_FS1') {
+                lagFilters.push("RelationshipType = 'PR_FS1'");
+            } else if (req.query.relationship_type.includes(',')) {
+                const types = req.query.relationship_type.split(',');
+                const validTypes = types.filter(type => type !== 'PR_FS1');
+                if (validTypes.length > 0) {
+                    lagFilters.push(`RelationshipType IN (${'?,'.repeat(validTypes.length).slice(0, -1)})`);
+                    lagParams.push(...validTypes);
+                }
+                if (types.includes('PR_FS1')) {
+                    lagFilters.push("RelationshipType = 'PR_FS1'");
+                }
+            } else {
+                lagFilters.push('RelationshipType = ?');
+                lagParams.push(req.query.relationship_type);
+            }
+        }
+        
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                lagFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                lagFilters.push("Driving = 'N'");
+            }
+        }
+        
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            lagFilters.push('FreeFloat = ?');
+            lagParams.push(parseFloat(req.query.free_float));
+        }
+        
+        // Add Lag > 0 condition for Lag_Count
+        lagFilters.push("Lag > 0");
+        const lagWhereClause = 'WHERE ' + lagFilters.join(' AND ');
+        
+        // Query for Total_Relationship_Count (user selected filters only)
+        const totalQuery = `
+            SELECT COUNT(*) as Total_Relationship_Count
             FROM ActivityRelationshipView
-            ${whereClause}
+            ${totalWhereClause}
+        `;
+        
+        // Query for Remaining_Relationship_Count (Relationship_Status >= "Incomplete" + user filters, ignoring RelationshipType, Lag, etc.)
+        const remainingQuery = `
+            SELECT COUNT(*) as Remaining_Relationship_Count
+            FROM ActivityRelationshipView
+            ${remainingWhereClause}
+        `;
+        
+        // Query for Lag_Count (base FS+0d filters + user filters + Lag > 0)
+        const lagQuery = `
+            SELECT COUNT(*) as Lag_Count
+            FROM ActivityRelationshipView
+            ${lagWhereClause}
         `;
 
-        const row = await new Promise((resolve, reject) => {
-            db.get(query, params, (err, row) => {
+        const [totalResult, remainingResult, lagResult] = await Promise.all([
+            new Promise((resolve, reject) => {
+                db.get(totalQuery, totalParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in fs-kpi:', err);
-                    resolve({});
+                        console.error('[Schedule API] Error in fs-kpi total:', err);
+                        resolve({ Total_Relationship_Count: 0 });
                     return;
                 }
-                resolve(row || {});
-            });
-        });
+                    resolve(row || { Total_Relationship_Count: 0 });
+                });
+            }),
+            new Promise((resolve, reject) => {
+                db.get(remainingQuery, remainingParams, (err, row) => {
+                    if (err) {
+                        console.error('[Schedule API] Error in fs-kpi remaining:', err);
+                        resolve({ Remaining_Relationship_Count: 0 });
+                        return;
+                    }
+                    resolve(row || { Remaining_Relationship_Count: 0 });
+                });
+            }),
+            new Promise((resolve, reject) => {
+                db.get(lagQuery, lagParams, (err, row) => {
+                    if (err) {
+                        console.error('[Schedule API] Error in fs-kpi lag:', err);
+                        resolve({ Lag_Count: 0 });
+                        return;
+                    }
+                    resolve(row || { Lag_Count: 0 });
+                });
+            })
+        ]);
 
-        res.json(row);
+        res.json({
+            Total_Relationship_Count: totalResult.Total_Relationship_Count,
+            Remaining_Relationship_Count: remainingResult.Remaining_Relationship_Count,
+            Lag_Count: lagResult.Lag_Count
+        });
     } catch (error) {
         console.error('[Schedule API] Error in fs-kpi endpoint:', error);
         res.status(500).json({ error: 'Failed to fetch FS+0d KPI data' });
@@ -2760,43 +2976,181 @@ app.get('/api/schedule/fs-kpi', async (req, res) => {
 // Non-FS+0d KPI endpoint
 app.get('/api/schedule/non-fs-kpi', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        // For Total_Relationship_Count - apply Non-FS+0d base filters + user filters (excluding RelationshipType)
+        const totalFilters = [];
+        const totalParams = [];
         
-        let filters = [];
-        const params = [];
+        // Non-FS+0d base filters for Total_Relationship_Count (excluding Lag to differentiate from Remaining)
+        totalFilters.push("Relationship_Status = ?");
+        totalFilters.push("RelationshipType NOT IN (?, ?)");
+        totalParams.push('Incomplete', 'PR_FS', 'PR_FS1');
         
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
+        // Project filter
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            totalFilters.push('Project_ID = ?');
+            totalParams.push(req.query.project_id.toString());
         }
         
-        const whereClause = filters.length > 0 ? 'WHERE ' + filters.join(' AND ') : '';
+        // User-selected filters for Total_Relationship_Count (excluding RelationshipType)
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                totalFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                totalFilters.push("Driving = 'N'");
+            }
+        }
         
-        const query = `
-            SELECT
-                COUNT(*) as Total_Relationship_Count,
-                SUM(CASE WHEN RelationshipType = 'PR_FS' AND Lag = 0 THEN 1 ELSE 0 END) as Remaining_Relationship_Count,
-                COUNT(*) - SUM(CASE WHEN RelationshipType = 'PR_FS' AND Lag = 0 THEN 1 ELSE 0 END) as NonFS_Count,
-                ROUND(
-                    ((COUNT(*) - SUM(CASE WHEN RelationshipType = 'PR_FS' AND Lag = 0 THEN 1 ELSE 0 END)) * 100.0) / COUNT(*), 
-                    2
-                ) as NonFS_Percentage
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            totalFilters.push('FreeFloat = ?');
+            totalParams.push(parseFloat(req.query.free_float));
+        }
+        
+        const totalWhereClause = 'WHERE ' + totalFilters.join(' AND ');
+        
+        // For Remaining_Relationship_Count - apply Non-FS+0d base filters + user filters (excluding RelationshipType, Lag, ExcessiveLag, Lag(bins))
+        const remainingFilters = [];
+        const remainingParams = [];
+        
+        // Non-FS+0d base filters for Remaining_Relationship_Count
+        remainingFilters.push("Relationship_Status = ?");
+        remainingFilters.push("RelationshipType NOT IN (?, ?)");
+        remainingFilters.push("(Lag != 0 AND Lag IS NOT NULL)");
+        remainingParams.push('Incomplete', 'PR_FS', 'PR_FS1');
+        
+        // Project filter for Remaining
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            remainingFilters.push('Project_ID = ?');
+            remainingParams.push(req.query.project_id.toString());
+        }
+        
+        // User filters for Remaining (excluding RelationshipType, Lag, ExcessiveLag, Lag(bins))
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                remainingFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                remainingFilters.push("Driving = 'N'");
+            }
+        }
+        
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            remainingFilters.push('FreeFloat = ?');
+            remainingParams.push(parseFloat(req.query.free_float));
+        }
+        
+        const remainingWhereClause = 'WHERE ' + remainingFilters.join(' AND ');
+        
+        // For Lag_Count (3rd card) - apply base Non-FS+0d filters + user filters + Lag > 0
+        const lagFilters = [];
+        const lagParams = [];
+        
+        // Base Non-FS+0d filters for Lag_Count
+        lagFilters.push("Relationship_Status = ?");
+        lagFilters.push("RelationshipType NOT IN (?, ?)");
+        lagFilters.push("(Lag != 0 AND Lag IS NOT NULL)");
+        lagParams.push('Incomplete', 'PR_FS', 'PR_FS1');
+        
+        // Project filter for Lag_Count
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
+            lagFilters.push('Project_ID = ?');
+            lagParams.push(req.query.project_id.toString());
+        }
+        
+        // User-selected filters for Lag_Count
+        if (req.query.relationship_type && req.query.relationship_type !== 'all' && req.query.relationship_type !== '') {
+            if (req.query.relationship_type === 'PR_FS1') {
+                lagFilters.push("RelationshipType = 'PR_FS1'");
+            } else if (req.query.relationship_type.includes(',')) {
+                const types = req.query.relationship_type.split(',');
+                const validTypes = types.filter(type => type !== 'PR_FS1');
+                if (validTypes.length > 0) {
+                    lagFilters.push(`RelationshipType IN (${'?,'.repeat(validTypes.length).slice(0, -1)})`);
+                    lagParams.push(...validTypes);
+                }
+                if (types.includes('PR_FS1')) {
+                    lagFilters.push("RelationshipType = 'PR_FS1'");
+                }
+            } else {
+                lagFilters.push('RelationshipType = ?');
+                lagParams.push(req.query.relationship_type);
+            }
+        }
+        
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                lagFilters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                lagFilters.push("Driving = 'N'");
+            }
+        }
+        
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            lagFilters.push('FreeFloat = ?');
+            lagParams.push(parseFloat(req.query.free_float));
+        }
+        
+        // Add Lag > 0 condition for Lag_Count
+        lagFilters.push("Lag > 0");
+        const lagWhereClause = 'WHERE ' + lagFilters.join(' AND ');
+        
+        // Query for Total_Relationship_Count (user selected filters only)
+        const totalQuery = `
+            SELECT COUNT(*) as Total_Relationship_Count
             FROM ActivityRelationshipView
-            ${whereClause}
+            ${totalWhereClause}
+        `;
+        
+        // Query for Remaining_Relationship_Count (Relationship_Status >= "Incomplete" + user filters, ignoring RelationshipType, Lag, etc.)
+        const remainingQuery = `
+            SELECT COUNT(*) as Remaining_Relationship_Count
+            FROM ActivityRelationshipView
+            ${remainingWhereClause}
+        `;
+        
+        // Query for Lag_Count (base Non-FS+0d filters + user filters + Lag > 0)
+        const lagQuery = `
+            SELECT COUNT(*) as Lag_Count
+            FROM ActivityRelationshipView
+            ${lagWhereClause}
         `;
 
-        const row = await new Promise((resolve, reject) => {
-            db.get(query, params, (err, row) => {
+        const [totalResult, remainingResult, lagResult] = await Promise.all([
+            new Promise((resolve, reject) => {
+                db.get(totalQuery, totalParams, (err, row) => {
                 if (err) {
-                    console.error('[Schedule API] Error in non-fs-kpi:', err);
-                    resolve({});
+                        console.error('[Schedule API] Error in non-fs-kpi total:', err);
+                        resolve({ Total_Relationship_Count: 0 });
                     return;
                 }
-                resolve(row || {});
-            });
-        });
+                    resolve(row || { Total_Relationship_Count: 0 });
+                });
+            }),
+            new Promise((resolve, reject) => {
+                db.get(remainingQuery, remainingParams, (err, row) => {
+                    if (err) {
+                        console.error('[Schedule API] Error in non-fs-kpi remaining:', err);
+                        resolve({ Remaining_Relationship_Count: 0 });
+                        return;
+                    }
+                    resolve(row || { Remaining_Relationship_Count: 0 });
+                });
+            }),
+            new Promise((resolve, reject) => {
+                db.get(lagQuery, lagParams, (err, row) => {
+                    if (err) {
+                        console.error('[Schedule API] Error in non-fs-kpi lag:', err);
+                        resolve({ Lag_Count: 0 });
+                        return;
+                    }
+                    resolve(row || { Lag_Count: 0 });
+                });
+            })
+        ]);
 
-        res.json(row);
+        res.json({
+            Total_Relationship_Count: totalResult.Total_Relationship_Count,
+            Remaining_Relationship_Count: remainingResult.Remaining_Relationship_Count,
+            Lag_Count: lagResult.Lag_Count
+        });
     } catch (error) {
         console.error('[Schedule API] Error in non-fs-kpi endpoint:', error);
         res.status(500).json({ error: 'Failed to fetch Non-FS+0d KPI data' });
@@ -2806,15 +3160,12 @@ app.get('/api/schedule/non-fs-kpi', async (req, res) => {
 // FS+0d Chart Data endpoint
 app.get('/api/schedule/fs-chart-data', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         
-        let filters = ["RelationshipType = 'PR_FS' AND Lag = 0"];
-        const params = [];
-        
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
+        // Add FS+0d specific filters
+        filters.push("RelationshipType = ?");
+        filters.push("Lag = ?");
+        params.push('PR_FS', 0);
         
         const whereClause = 'WHERE ' + filters.join(' AND ');
         
@@ -2849,15 +3200,12 @@ app.get('/api/schedule/fs-chart-data', async (req, res) => {
 // Non-FS+0d Chart Data endpoint
 app.get('/api/schedule/non-fs-chart-data', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
         
-        let filters = ["NOT (RelationshipType = 'PR_FS' AND Lag = 0)"];
-        const params = [];
-        
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
+        // Add Non-FS+0d specific filters (Power BI compliant)
+        filters.push("RelationshipType NOT IN (?, ?)");
+        filters.push("(Lag != 0 AND Lag IS NOT NULL)");
+        params.push('PR_FS', 'PR_FS1');
         
         const whereClause = 'WHERE ' + filters.join(' AND ');
         
@@ -2892,39 +3240,41 @@ app.get('/api/schedule/non-fs-chart-data', async (req, res) => {
 // FS+0d Table Data endpoint
 app.get('/api/schedule/fs', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
+        const { filters, params } = buildScheduleFilters(req);
+        const limit = req.query.limit || 20;
         
-        let filters = ["RelationshipType = 'PR_FS' AND Lag = 0"];
-        const params = [];
-        
-        if (projectId && projectId !== 'all') {
-            filters.push('Project_ID = ?');
-            params.push(projectId);
-        }
+        // Add FS+0d specific filters
+        filters.push("RelationshipType = ?");
+        filters.push("Lag = ?");
+        params.push('PR_FS', 0);
         
         const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT
-                PredecessorActivityID,
-                PredecessorActivityName,
-                SuccessorActivityID,
-                SuccessorActivityName,
-                RelationshipType,
+                Activity_ID as "Pred. ID",
+                Activity_ID2 as "Succ. ID", 
+                Activity_Name as "Pred. Name",
+                Activity_Name2 as "Succ. Name",
+                RelationshipType as "Relationship type",
                 Lag,
+                Driving,
                 FreeFloat,
-                TotalFloat,
-                Driving
+                Lead,
+                ExcessiveLag,
+                Relationship_Status
             FROM ActivityRelationshipView
             ${whereClause}
-            ORDER BY PredecessorActivityID
-            LIMIT 100
+            ORDER BY Activity_ID
+            LIMIT ?
         `;
+
+        params.push(parseInt(limit));
 
         const rows = await new Promise((resolve, reject) => {
             db.all(query, params, (err, rows) => {
                 if (err) {
-                    console.error('[Schedule API] Error in fs table data:', err);
+                    console.error('[Schedule API] Error in fs:', err);
                     resolve([]);
                     return;
                 }
@@ -2934,47 +3284,90 @@ app.get('/api/schedule/fs', async (req, res) => {
 
         res.json(rows);
     } catch (error) {
-        console.error('[Schedule API] Error in fs table endpoint:', error);
-        res.status(500).json({ error: 'Failed to fetch FS+0d table data' });
+        console.error('[Schedule API] Error in fs endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch FS+0d data' });
     }
 });
 
 // Non-FS+0d Table Data endpoint
 app.get('/api/schedule/non-fs', async (req, res) => {
     try {
-        const projectId = req.query.project_id;
-        
-        let filters = ["NOT (RelationshipType = 'PR_FS' AND Lag = 0)"];
+        const filters = [];
         const params = [];
+        const limit = req.query.limit || 20;
         
-        if (projectId && projectId !== 'all') {
+        // Base filters for Non-FS+0d metric
+        filters.push("Relationship_Status = ?");
+        filters.push("RelationshipType NOT IN (?, ?)");
+        filters.push("(Lag != 0 AND Lag IS NOT NULL)");
+        params.push('Incomplete', 'PR_FS', 'PR_FS1');
+        
+        // Project filter
+        if (req.query.project_id && req.query.project_id !== 'all' && req.query.project_id !== '') {
             filters.push('Project_ID = ?');
-            params.push(projectId);
+            params.push(req.query.project_id.toString());
+        }
+        
+        // User-selected filters
+        if (req.query.relationship_type && req.query.relationship_type !== 'all' && req.query.relationship_type !== '') {
+            if (req.query.relationship_type === 'PR_FS1') {
+                filters.push("RelationshipType = 'PR_FS1'");
+            } else if (req.query.relationship_type.includes(',')) {
+                const types = req.query.relationship_type.split(',');
+                const validTypes = types.filter(type => type !== 'PR_FS1');
+                if (validTypes.length > 0) {
+                    filters.push(`RelationshipType IN (${'?,'.repeat(validTypes.length).slice(0, -1)})`);
+                    params.push(...validTypes);
+                }
+                if (types.includes('PR_FS1')) {
+                    filters.push("RelationshipType = 'PR_FS1'");
+                }
+            } else {
+                filters.push('RelationshipType = ?');
+                params.push(req.query.relationship_type);
+            }
+        }
+        
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                filters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                filters.push("Driving = 'N'");
+            }
+        }
+        
+        if (req.query.free_float && req.query.free_float !== 'all' && req.query.free_float !== '') {
+            filters.push('FreeFloat = ?');
+            params.push(parseFloat(req.query.free_float));
         }
         
         const whereClause = 'WHERE ' + filters.join(' AND ');
         
         const query = `
             SELECT
-                PredecessorActivityID,
-                PredecessorActivityName,
-                SuccessorActivityID,
-                SuccessorActivityName,
-                RelationshipType,
+                Activity_ID as "Pred. ID",
+                Activity_ID2 as "Succ. ID", 
+                Activity_Name as "Pred. Name",
+                Activity_Name2 as "Succ. Name",
+                RelationshipType as "Relationship type",
                 Lag,
+                Driving,
                 FreeFloat,
-                TotalFloat,
-                Driving
+                Lead,
+                ExcessiveLag,
+                Relationship_Status
             FROM ActivityRelationshipView
             ${whereClause}
-            ORDER BY PredecessorActivityID
-            LIMIT 100
+            ORDER BY Activity_ID
+            LIMIT ?
         `;
+
+        params.push(parseInt(limit));
 
         const rows = await new Promise((resolve, reject) => {
             db.all(query, params, (err, rows) => {
                 if (err) {
-                    console.error('[Schedule API] Error in non-fs table data:', err);
+                    console.error('[Schedule API] Error in non-fs:', err);
                     resolve([]);
                     return;
                 }
@@ -2984,8 +3377,699 @@ app.get('/api/schedule/non-fs', async (req, res) => {
 
         res.json(rows);
     } catch (error) {
-        console.error('[Schedule API] Error in non-fs table endpoint:', error);
-        res.status(500).json({ error: 'Failed to fetch Non-FS+0d table data' });
+        console.error('[Schedule API] Error in non-fs endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Non-FS+0d data' });
+    }
+});
+
+// Project options endpoint
+app.get('/api/project-options', async (req, res) => {
+    try {
+        const query = `
+            SELECT DISTINCT 
+                Project_ID as id,
+                Project_ID as name
+            FROM ActivityRelationshipView
+            WHERE Project_ID IS NOT NULL
+            ORDER BY Project_ID
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, [], (err, rows) => {
+                if (err) {
+                    console.error('[Project API] Error fetching project options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Project API] Error in project-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch project options' });
+    }
+});
+
+// Relationship type options endpoint
+app.get('/api/relationship-type-options', async (req, res) => {
+    try {
+        const query = `
+            SELECT DISTINCT 
+                RelationshipType as value,
+                RelationshipType as label
+            FROM ActivityRelationshipView
+            WHERE RelationshipType IS NOT NULL
+            AND Relationship_Status = 'Incomplete'
+            ORDER BY RelationshipType
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, [], (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching relationship types:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in relationship-type-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch relationship type options' });
+    }
+});
+
+// Free float options endpoint (context-aware)
+app.get('/api/free-float-options', async (req, res) => {
+    try {
+        let filters = ["FreeFloat IS NOT NULL", "Relationship_Status = 'Incomplete'"];
+        const params = [];
+        
+        // Apply metric-specific filters
+        const metricType = req.query.metric_type;
+        if (metricType === 'fs') {
+            // For FS+0d metric, include only FS+0d relationships
+            filters.push("RelationshipType = 'PR_FS'");
+            filters.push("Lag = 0");
+        } else if (metricType === 'non-fs') {
+            // For Non-FS+0d metric, exclude FS+0d relationships
+            filters.push("NOT (RelationshipType = 'PR_FS' AND Lag = 0)");
+        }
+        
+        // Apply project filter if provided
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        // Apply relationship type filter if provided
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            if (req.query.relationship_type === 'PR_FS1') {
+                // Return empty for PR_FS1 since it doesn't exist
+                res.json([]);
+                return;
+            } else {
+                filters.push('RelationshipType = ?');
+                params.push(req.query.relationship_type);
+            }
+        }
+        
+        // Apply driving filter if provided
+        if (req.query.driving && req.query.driving !== 'all' && req.query.driving !== '') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                filters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                filters.push("Driving = 'N'");
+            }
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                FreeFloat as value,
+                FreeFloat as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY CAST(FreeFloat AS REAL) ASC
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching free float options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in free-float-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch free float options' });
+    }
+});
+
+// FS+0d specific relationship type options endpoint
+app.get('/api/fs-relationship-type-options', async (req, res) => {
+    try {
+        // Only return relationship types that actually exist in the data for FS+0d base filters
+        let filters = [
+            "RelationshipType IN ('PR_FS', 'PR_FS1')",
+            "Relationship_Status = 'Incomplete'",
+            "Lag = 0"
+        ];
+        const params = [];
+        
+        // Apply project filter if provided
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                RelationshipType as value,
+                RelationshipType as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY RelationshipType
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching fs relationship types:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in fs-relationship-type-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch FS relationship type options' });
+    }
+});
+
+// Non-FS+0d specific relationship type options endpoint
+app.get('/api/non-fs-relationship-type-options', async (req, res) => {
+    try {
+        // Return relationship types that exist in data but exclude PR_FS and PR_FS1 entirely
+        let filters = [
+            "RelationshipType IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "RelationshipType NOT IN ('PR_FS', 'PR_FS1')",
+            "(Lag != 0 OR Lag IS NULL)"
+        ];
+        const params = [];
+        
+        // Apply project filter if provided
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                RelationshipType as value,
+                RelationshipType as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY RelationshipType
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching non-fs relationship types:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in non-fs-relationship-type-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Non-FS relationship type options' });
+    }
+});
+
+// Leads specific relationship type options endpoint
+app.get('/api/leads-relationship-type-options', async (req, res) => {
+    try {
+        // Return relationship types that exist in data with leads base filters
+        let filters = [
+            "RelationshipType IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "Lag < 0"
+        ];
+        const params = [];
+        
+        // Apply project filter if provided
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                RelationshipType as value,
+                RelationshipType as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY RelationshipType
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching leads relationship types:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in leads-relationship-type-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Leads relationship type options' });
+    }
+});
+
+// Lags specific relationship type options endpoint
+app.get('/api/lags-relationship-type-options', async (req, res) => {
+    try {
+        // Return relationship types that exist in data with lags base filters
+        let filters = [
+            "RelationshipType IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "Lag > 0"
+        ];
+        const params = [];
+        
+        // Apply project filter if provided
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                RelationshipType as value,
+                RelationshipType as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY RelationshipType
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching lags relationship types:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in lags-relationship-type-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Lags relationship type options' });
+    }
+});
+
+// Excessive Lags specific relationship type options endpoint
+app.get('/api/excessive-lags-relationship-type-options', async (req, res) => {
+    try {
+        // Return relationship types that exist in data with excessive lags base filters
+        let filters = [
+            "RelationshipType IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "ExcessiveLag > 0"
+        ];
+        const params = [];
+        
+        // Apply project filter if provided
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                RelationshipType as value,
+                RelationshipType as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY RelationshipType
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching excessive lags relationship types:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in excessive-lags-relationship-type-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Excessive Lags relationship type options' });
+    }
+});
+
+// Driving options endpoints for different metrics
+app.get('/api/leads-driving-options', async (req, res) => {
+    try {
+        let filters = [
+            "Driving IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "Lag < 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                Driving as value,
+                CASE 
+                    WHEN Driving = 'Y' THEN 'Yes'
+                    WHEN Driving = 'N' THEN 'No'
+                    ELSE Driving
+                END as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY Driving
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching leads driving options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in leads-driving-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Leads driving options' });
+    }
+});
+
+app.get('/api/lags-driving-options', async (req, res) => {
+    try {
+        let filters = [
+            "Driving IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "Lag > 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                Driving as value,
+                CASE 
+                    WHEN Driving = 'Y' THEN 'Yes'
+                    WHEN Driving = 'N' THEN 'No'
+                    ELSE Driving
+                END as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY Driving
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching lags driving options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in lags-driving-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Lags driving options' });
+    }
+});
+
+app.get('/api/excessive-lags-driving-options', async (req, res) => {
+    try {
+        let filters = [
+            "Driving IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "ExcessiveLag > 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                Driving as value,
+                CASE 
+                    WHEN Driving = 'Y' THEN 'Yes'
+                    WHEN Driving = 'N' THEN 'No'
+                    ELSE Driving
+                END as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY Driving
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching excessive lags driving options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in excessive-lags-driving-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Excessive Lags driving options' });
+    }
+});
+
+// Free float options endpoints for different metrics
+app.get('/api/leads-free-float-options', async (req, res) => {
+    try {
+        let filters = [
+            "FreeFloat IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "Lag < 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        if (req.query.driving && req.query.driving !== '' && req.query.driving !== 'all') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                filters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                filters.push("Driving = 'N'");
+            }
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                FreeFloat as value,
+                FreeFloat as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY CAST(FreeFloat AS REAL) ASC
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching leads free float options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in leads-free-float-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Leads free float options' });
+    }
+});
+
+app.get('/api/lags-free-float-options', async (req, res) => {
+    try {
+        let filters = [
+            "FreeFloat IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "Lag > 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        if (req.query.driving && req.query.driving !== '' && req.query.driving !== 'all') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                filters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                filters.push("Driving = 'N'");
+            }
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                FreeFloat as value,
+                FreeFloat as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY CAST(FreeFloat AS REAL) ASC
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching lags free float options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in lags-free-float-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Lags free float options' });
+    }
+});
+
+app.get('/api/excessive-lags-free-float-options', async (req, res) => {
+    try {
+        let filters = [
+            "FreeFloat IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "ExcessiveLag > 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        if (req.query.driving && req.query.driving !== '' && req.query.driving !== 'all') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                filters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                filters.push("Driving = 'N'");
+            }
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                FreeFloat as value,
+                FreeFloat as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY CAST(FreeFloat AS REAL) ASC
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching excessive lags free float options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in excessive-lags-free-float-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Excessive Lags free float options' });
     }
 });
 
