@@ -36,10 +36,34 @@ async function initializeApp() {
 }
 
 function setupEventListeners() {
-    // Metric card selection
+    // Metric card selection with hover functionality
     document.querySelectorAll('.metric-card').forEach(card => {
+        const metric = card.dataset.metric;
+        const color = card.dataset.color;
+        
+        console.log(`🎯 Setting up listeners for ${metric} with color ${color}`);
+        
+        // Mouse enter - add hover effect
+        card.addEventListener('mouseenter', function() {
+            if (!this.classList.contains('selected')) {
+                console.log(`🖱️ Hover enter: ${metric} (${color})`);
+                this.classList.remove('border-transparent');
+                this.classList.add(`border-${color}-500`);
+            }
+        });
+        
+        // Mouse leave - remove hover effect if not selected
+        card.addEventListener('mouseleave', function() {
+            if (!this.classList.contains('selected')) {
+                console.log(`🖱️ Hover leave: ${metric} (${color})`);
+                this.classList.remove(`border-${color}-500`);
+                this.classList.add('border-transparent');
+            }
+        });
+        
+        // Click - select metric
         card.addEventListener('click', function() {
-            const metric = this.dataset.metric;
+            console.log(`🖱️ Click: ${metric} (${color})`);
             selectMetric(metric);
         });
     });
@@ -227,8 +251,12 @@ async function loadDrivingOptions(metricType = 'general') {
             endpoint = '/api/lags-driving-options';
         } else if (metricType === 'excessive-lags') {
             endpoint = '/api/excessive-lags-driving-options';
+        } else if (metricType === 'fs') {
+            endpoint = '/api/fs-driving-options';
+        } else if (metricType === 'non-fs') {
+            endpoint = '/api/non-fs-driving-options';
         } else {
-            // For fs and non-fs, we can use the existing general free-float-options with metric_type
+            // For other metrics, use a general endpoint (if needed)
             endpoint = '/api/driving-options';
         }
         
@@ -288,8 +316,12 @@ async function loadFreeFloatOptions(metricType = 'general') {
             endpoint = '/api/lags-free-float-options';
         } else if (metricType === 'excessive-lags') {
             endpoint = '/api/excessive-lags-free-float-options';
+        } else if (metricType === 'fs') {
+            endpoint = '/api/fs-free-float-options';
+        } else if (metricType === 'non-fs') {
+            endpoint = '/api/non-fs-free-float-options';
         } else {
-            // For fs and non-fs, use the existing endpoint with metric_type parameter
+            // For other metrics, use a general endpoint (if needed)
             endpoint = '/api/free-float-options';
         }
         
@@ -352,31 +384,28 @@ async function loadFreeFloatOptions(metricType = 'general') {
 }
 
 async function selectMetric(metric) {
-    // Update UI state - remove all color borders and reset to transparent
+    console.log(`🔥 Selecting metric: ${metric}`);
+    
+    // Remove selected class and borders from all cards
     document.querySelectorAll('.metric-card').forEach(card => {
-        card.classList.remove('border-blue-500', 'border-green-500', 'border-orange-500', 'border-purple-500', 'border-red-500', 'border-indigo-500', 'border-pink-500', 'border-yellow-500', 'border-teal-500', 'border-cyan-500', 'border-rose-500', 'border-emerald-500', 'border-amber-500', 'border-violet-500');
+        card.classList.remove('selected');
+        const cardColor = card.dataset.color;
+        console.log(`🧹 Clearing ${card.dataset.metric} (${cardColor})`);
+        card.classList.remove(`border-${cardColor}-500`);
         card.classList.add('border-transparent');
     });
     
+    // Add selected class and border to clicked card
     const selectedCard = document.querySelector(`[data-metric="${metric}"]`);
     if (selectedCard) {
-        const colorMap = {
-            'fs': 'border-purple-500',
-            'non-fs': 'border-red-500',
-            'open-ends': 'border-indigo-500',
-            'leads': 'border-blue-500',
-            'lags': 'border-green-500',
-            'excessive-lags': 'border-orange-500',
-            'constraints': 'border-pink-500',
-            'excessive-durations': 'border-yellow-500',
-            'negative-total-float': 'border-teal-500',
-            'critical-total-float': 'border-cyan-500',
-            'excessive-total-float': 'border-rose-500',
-            'invalid-dates': 'border-emerald-500',
-            'riding-data-date': 'border-amber-500',
-            'resources': 'border-violet-500'
-        };
-        selectedCard.classList.add(colorMap[metric] || 'border-blue-500');
+        const color = selectedCard.dataset.color;
+        console.log(`✅ Selecting ${metric} with color ${color}`);
+        selectedCard.classList.add('selected');
+        selectedCard.classList.remove('border-transparent');
+        selectedCard.classList.add(`border-${color}-500`);
+        
+        // Verify the classes were applied
+        console.log(`🔍 Applied classes:`, selectedCard.classList.toString());
     }
     
     // Show content area and hide initial message
@@ -943,7 +972,7 @@ function updateTableSection(data, metric) {
             message = 'PR_FS1 relationship type is currently not available in the database. Please select PR_FS to view FS+0d activities.';
         }
         
-        tableBody.innerHTML = `<tr><td colspan="100%" class="text-center py-4 text-gray-500">${message}</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="100%" class="text-center py-2 text-xs text-gray-500">${message}</td></tr>`;
         return;
     }
     
@@ -951,7 +980,7 @@ function updateTableSection(data, metric) {
     const headerRow = document.createElement('tr');
     tableConfig.columns.forEach(column => {
         const th = document.createElement('th');
-        th.className = 'px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+        th.className = 'px-2 py-1 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
         th.textContent = column.title;
         headerRow.appendChild(th);
     });
@@ -964,7 +993,7 @@ function updateTableSection(data, metric) {
         
         tableConfig.columns.forEach(column => {
             const td = document.createElement('td');
-            td.className = 'px-4 py-2 text-sm text-gray-900';
+            td.className = 'px-2 py-1 text-xs text-gray-900';
             td.textContent = row[column.field] || '';
             tr.appendChild(td);
         });
@@ -975,7 +1004,7 @@ function updateTableSection(data, metric) {
     // Show total count if more than 50 rows
     if (data.length > 50) {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td colspan="${tableConfig.columns.length}" class="px-4 py-2 text-sm text-gray-500 text-center">Showing 50 of ${data.length} records</td>`;
+        tr.innerHTML = `<td colspan="${tableConfig.columns.length}" class="px-2 py-1 text-xs text-gray-500 text-center">Showing 50 of ${data.length} records</td>`;
         tableBody.appendChild(tr);
     }
 }
@@ -1393,4 +1422,28 @@ async function exportFullPageToImage() {
         console.error('Error exporting full page to image:', error);
         showError('Failed to export page to image');
     }
-} 
+}
+
+// Debug function to test all color classes
+function testColorClasses() {
+    const colors = ['purple', 'red', 'indigo', 'blue', 'green', 'orange', 'pink', 'yellow'];
+    console.log('🎨 Testing color classes...');
+    
+    colors.forEach(color => {
+        const testElement = document.createElement('div');
+        testElement.classList.add(`border-${color}-500`);
+        testElement.style.border = '2px solid';
+        document.body.appendChild(testElement);
+        
+        const computedStyle = window.getComputedStyle(testElement);
+        const borderColor = computedStyle.borderColor;
+        
+        console.log(`🎨 ${color}: ${borderColor}`);
+        document.body.removeChild(testElement);
+    });
+}
+
+// Test color classes when page is fully loaded
+window.addEventListener('load', function() {
+    setTimeout(testColorClasses, 1000);
+});

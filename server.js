@@ -3385,7 +3385,40 @@ app.get('/api/schedule/non-fs', async (req, res) => {
 // Project options endpoint
 app.get('/api/project-options', async (req, res) => {
     try {
-        const query = `
+        // First try to get project names from PROJECT table
+        const projectQuery = `
+            SELECT DISTINCT 
+                proj_id as id,
+                CASE 
+                    WHEN proj_short_name IS NOT NULL AND proj_short_name != '' 
+                    THEN SUBSTR(proj_short_name, 1, INSTR(proj_short_name || '_', '_') - 1)
+                    ELSE proj_id 
+                END as name
+            FROM PROJECT
+            WHERE proj_id IS NOT NULL
+            ORDER BY proj_id
+        `;
+
+        const projectRows = await new Promise((resolve, reject) => {
+            db.all(projectQuery, [], (err, rows) => {
+                if (err) {
+                    console.error('[Project API] Error fetching from PROJECT table:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        // If PROJECT table has data, use it
+        if (projectRows.length > 0) {
+            console.log('[Project API] Using PROJECT table data:', projectRows);
+            res.json(projectRows);
+            return;
+        }
+
+        // Fallback to ActivityRelationshipView if PROJECT table is empty
+        const fallbackQuery = `
             SELECT DISTINCT 
                 Project_ID as id,
                 Project_ID as name
@@ -3394,10 +3427,10 @@ app.get('/api/project-options', async (req, res) => {
             ORDER BY Project_ID
         `;
 
-        const rows = await new Promise((resolve, reject) => {
-            db.all(query, [], (err, rows) => {
+        const fallbackRows = await new Promise((resolve, reject) => {
+            db.all(fallbackQuery, [], (err, rows) => {
                 if (err) {
-                    console.error('[Project API] Error fetching project options:', err);
+                    console.error('[Project API] Error fetching project options from fallback:', err);
                     resolve([]);
                     return;
                 }
@@ -3405,7 +3438,8 @@ app.get('/api/project-options', async (req, res) => {
             });
         });
 
-        res.json(rows);
+        console.log('[Project API] Using fallback ActivityRelationshipView data:', fallbackRows);
+        res.json(fallbackRows);
     } catch (error) {
         console.error('[Project API] Error in project-options endpoint:', error);
         res.status(500).json({ error: 'Failed to fetch project options' });
@@ -3901,6 +3935,226 @@ app.get('/api/excessive-lags-driving-options', async (req, res) => {
     } catch (error) {
         console.error('[Filter API] Error in excessive-lags-driving-options endpoint:', error);
         res.status(500).json({ error: 'Failed to fetch Excessive Lags driving options' });
+    }
+});
+
+// FS and Non-FS driving options endpoints
+app.get('/api/fs-driving-options', async (req, res) => {
+    try {
+        let filters = [
+            "Driving IS NOT NULL",
+            "RelationshipType = 'PR_FS'",
+            "Lag = 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                Driving as value,
+                CASE 
+                    WHEN Driving = 'Y' THEN 'Yes'
+                    WHEN Driving = 'N' THEN 'No'
+                    ELSE Driving
+                END as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY Driving
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching FS driving options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in fs-driving-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch FS driving options' });
+    }
+});
+
+app.get('/api/non-fs-driving-options', async (req, res) => {
+    try {
+        let filters = [
+            "Driving IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "RelationshipType NOT IN ('PR_FS', 'PR_FS1')",
+            "(Lag != 0 AND Lag IS NOT NULL)"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                Driving as value,
+                CASE 
+                    WHEN Driving = 'Y' THEN 'Yes'
+                    WHEN Driving = 'N' THEN 'No'
+                    ELSE Driving
+                END as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY Driving
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching Non-FS driving options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in non-fs-driving-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Non-FS driving options' });
+    }
+});
+
+// FS and Non-FS free float options endpoints
+app.get('/api/fs-free-float-options', async (req, res) => {
+    try {
+        let filters = [
+            "FreeFloat IS NOT NULL",
+            "RelationshipType = 'PR_FS'",
+            "Lag = 0"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        if (req.query.driving && req.query.driving !== '' && req.query.driving !== 'all') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                filters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                filters.push("Driving = 'N'");
+            }
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                FreeFloat as value,
+                FreeFloat as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY CAST(FreeFloat AS REAL) ASC
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching FS free float options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in fs-free-float-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch FS free float options' });
+    }
+});
+
+app.get('/api/non-fs-free-float-options', async (req, res) => {
+    try {
+        let filters = [
+            "FreeFloat IS NOT NULL",
+            "Relationship_Status = 'Incomplete'",
+            "RelationshipType NOT IN ('PR_FS', 'PR_FS1')",
+            "(Lag != 0 AND Lag IS NOT NULL)"
+        ];
+        const params = [];
+        
+        if (req.query.project_id && req.query.project_id !== '' && req.query.project_id !== 'all') {
+            filters.push('Project_ID = ?');
+            params.push(req.query.project_id);
+        }
+        
+        if (req.query.relationship_type && req.query.relationship_type !== '' && req.query.relationship_type !== 'all') {
+            filters.push('RelationshipType = ?');
+            params.push(req.query.relationship_type);
+        }
+        
+        if (req.query.driving && req.query.driving !== '' && req.query.driving !== 'all') {
+            if (req.query.driving === 'Y' || req.query.driving === 'Yes') {
+                filters.push("Driving = 'Y'");
+            } else if (req.query.driving === 'N' || req.query.driving === 'No') {
+                filters.push("Driving = 'N'");
+            }
+        }
+        
+        const whereClause = 'WHERE ' + filters.join(' AND ');
+        
+        const query = `
+            SELECT DISTINCT 
+                FreeFloat as value,
+                FreeFloat as label
+            FROM ActivityRelationshipView
+            ${whereClause}
+            ORDER BY CAST(FreeFloat AS REAL) ASC
+        `;
+
+        const rows = await new Promise((resolve, reject) => {
+            db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[Filter API] Error fetching Non-FS free float options:', err);
+                    resolve([]);
+                    return;
+                }
+                resolve(rows || []);
+            });
+        });
+
+        res.json(rows);
+    } catch (error) {
+        console.error('[Filter API] Error in non-fs-free-float-options endpoint:', error);
+        res.status(500).json({ error: 'Failed to fetch Non-FS free float options' });
     }
 });
 
