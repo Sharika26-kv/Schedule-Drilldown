@@ -74,10 +74,32 @@ function setupEventListeners() {
         updateActiveFiltersCount();
         // Reload all filter options based on new project selection
         if (currentMetric) {
-            loadRelationshipTypes(currentMetric);
-            loadDrivingOptions(currentMetric);
-            loadFreeFloatOptions(currentMetric);
-            loadMetricData(currentMetric);
+            if (currentMetric === 'open-ends') {
+                // For Open Ends, reload activity-based filters
+                Promise.all([
+                    loadActivityTypes(),
+                    loadActivityStatuses()
+                ]).then(() => {
+                    loadMetricData(currentMetric);
+                });
+            } else if (currentMetric === 'constraints') {
+                // For Constraints, reload activity-based filters 
+                Promise.all([
+                    loadActivityTypes(),
+                    loadHardSoftConstraints()
+                ]).then(() => {
+                    loadMetricData(currentMetric);
+                });
+            } else {
+                // For other metrics, reload relationship-based filters
+                Promise.all([
+                    loadRelationshipTypes(currentMetric),
+                    loadDrivingOptions(currentMetric),
+                    loadFreeFloatOptions(currentMetric)
+                ]).then(() => {
+                    loadMetricData(currentMetric);
+                });
+            }
         }
     });
     
@@ -113,16 +135,15 @@ function setupEventListeners() {
             element.addEventListener('change', function() {
                 updateActiveFiltersCount();
                 
-                // Reload dependent filter options when filters change
-                if (id === 'relationshipTypeFilter') {
-                    // When relationship type changes, reload driving and free float options
-                    if (currentMetric) {
+                // Only reload dependent filter options for relationship-based metrics
+                if (currentMetric && currentMetric !== 'open-ends' && currentMetric !== 'constraints') {
+                    // Reload dependent filter options when filters change
+                    if (id === 'relationshipTypeFilter') {
+                        // When relationship type changes, reload driving and free float options
                         loadDrivingOptions(currentMetric);
                         loadFreeFloatOptions(currentMetric);
-                    }
-                } else if (id === 'drivingFilter') {
-                    // When driving changes, reload free float options
-                    if (currentMetric) {
+                    } else if (id === 'drivingFilter') {
+                        // When driving changes, reload free float options
                         loadFreeFloatOptions(currentMetric);
                     }
                 }
@@ -242,8 +263,14 @@ async function loadRelationshipTypes(metricType = 'general') {
 
 async function loadDrivingOptions(metricType = 'general') {
     try {
+        // Skip loading driving options for metrics that don't need them
+        if (metricType === 'constraints' || metricType === 'open-ends') {
+            console.log(`Skipping driving options for ${metricType} - not needed`);
+            return;
+        }
+        
         // Use different endpoint based on metric type
-        let endpoint = '/api/driving-options'; // Default general endpoint (if needed)
+        let endpoint = null;
         
         if (metricType === 'leads') {
             endpoint = '/api/leads-driving-options';
@@ -256,8 +283,9 @@ async function loadDrivingOptions(metricType = 'general') {
         } else if (metricType === 'non-fs') {
             endpoint = '/api/non-fs-driving-options';
         } else {
-            // For other metrics, use a general endpoint (if needed)
-            endpoint = '/api/driving-options';
+            // For unknown metrics, skip loading driving options
+            console.log(`No driving options endpoint for metric: ${metricType}`);
+            return;
         }
         
         // Build query parameters
@@ -307,8 +335,14 @@ async function loadDrivingOptions(metricType = 'general') {
 
 async function loadFreeFloatOptions(metricType = 'general') {
     try {
+        // Skip loading free float options for metrics that don't need them
+        if (metricType === 'constraints' || metricType === 'open-ends') {
+            console.log(`Skipping free float options for ${metricType} - not needed`);
+            return;
+        }
+        
         // Use different endpoint based on metric type
-        let endpoint = '/api/free-float-options'; // Default general endpoint
+        let endpoint = null;
         
         if (metricType === 'leads') {
             endpoint = '/api/leads-free-float-options';
@@ -321,8 +355,9 @@ async function loadFreeFloatOptions(metricType = 'general') {
         } else if (metricType === 'non-fs') {
             endpoint = '/api/non-fs-free-float-options';
         } else {
-            // For other metrics, use a general endpoint (if needed)
-            endpoint = '/api/free-float-options';
+            // For unknown metrics, skip loading free float options
+            console.log(`No free float options endpoint for metric: ${metricType}`);
+            return;
         }
         
         // Build query parameters based on current filter state (excluding free float itself)
@@ -383,6 +418,116 @@ async function loadFreeFloatOptions(metricType = 'general') {
     }
 }
 
+async function loadActivityTypes() {
+    try {
+        // Build query parameters for project filtering
+        const params = new URLSearchParams();
+        if (currentProjectId && currentProjectId !== '') {
+            params.append('project_id', currentProjectId);
+        }
+        
+        const queryString = params.toString() ? '?' + params.toString() : '';
+        const response = await fetch(`${API_BASE}/api/activity-types${queryString}`);
+        if (!response.ok) throw new Error(`Failed to fetch activity types: ${response.status}`);
+        
+        const activityTypes = await response.json();
+        const relationshipSelect = document.getElementById('relationshipTypeFilter');
+        const label = document.querySelector('label[for="relationshipTypeFilter"]');
+        
+        // Update the label and options for Activity Type
+        label.textContent = 'Activity Type:';
+        relationshipSelect.innerHTML = '<option value="all">All Types</option>';
+        
+        activityTypes.forEach(type => {
+            const option = document.createElement('option');
+            option.value = type.name || type.ActivityType;
+            option.textContent = type.name || type.ActivityType;
+            relationshipSelect.appendChild(option);
+        });
+        
+        console.log(`Loaded ${activityTypes.length} activity types for project ${currentProjectId || 'all'}`);
+    } catch (error) {
+        console.error('Error loading activity types:', error);
+        showError('Failed to load activity types');
+    }
+}
+
+async function loadActivityStatuses() {
+    try {
+        // Build query parameters for project filtering
+        const params = new URLSearchParams();
+        if (currentProjectId && currentProjectId !== '') {
+            params.append('project_id', currentProjectId);
+        }
+        
+        const queryString = params.toString() ? '?' + params.toString() : '';
+        const response = await fetch(`${API_BASE}/api/activity-statuses${queryString}`);
+        if (!response.ok) throw new Error(`Failed to fetch activity statuses: ${response.status}`);
+        
+        const activityStatuses = await response.json();
+        const drivingSelect = document.getElementById('drivingFilter');
+        const label = document.querySelector('label[for="drivingFilter"]');
+        
+        // Update the label and options for Activity Status
+        label.textContent = 'Activity Status:';
+        drivingSelect.innerHTML = '<option value="all">All Statuses</option>';
+        
+        activityStatuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status.name || status.ActivityStatus;
+            option.textContent = status.name || status.ActivityStatus;
+            drivingSelect.appendChild(option);
+        });
+        
+        // Hide the Free Float filter for Open Ends
+        const freeFloatContainer = document.querySelector('label[for="freeFloatFilter"]').parentElement;
+        freeFloatContainer.style.display = 'none';
+        
+        console.log(`Loaded ${activityStatuses.length} activity statuses for project ${currentProjectId || 'all'}`);
+    } catch (error) {
+        console.error('Error loading activity statuses:', error);
+        showError('Failed to load activity statuses');
+    }
+}
+
+function resetFilterLabels() {
+    console.log('🔄 Resetting filter labels to relationship-based filters');
+    
+    // Reset to original relationship-based filter labels
+    const relationshipLabel = document.querySelector('label[for="relationshipTypeFilter"]');
+    const drivingLabel = document.querySelector('label[for="drivingFilter"]');
+    const freeFloatContainer = document.querySelector('label[for="freeFloatFilter"]').parentElement;
+    
+    if (relationshipLabel) {
+        relationshipLabel.textContent = 'Relationship Type:';
+    }
+    if (drivingLabel) {
+        drivingLabel.textContent = 'Driving:';
+    }
+    if (freeFloatContainer) {
+        freeFloatContainer.style.display = 'block'; // Show free float filter
+    }
+    
+    // Reset the select elements to default relationship-based options
+    const relationshipSelect = document.getElementById('relationshipTypeFilter');
+    const drivingSelect = document.getElementById('drivingFilter');
+    const freeFloatSelect = document.getElementById('freeFloatFilter');
+    
+    if (relationshipSelect) {
+        relationshipSelect.innerHTML = '<option value="all">All</option>';
+    }
+    if (drivingSelect) {
+        drivingSelect.innerHTML = `
+            <option value="all">All</option>
+            <option value="Y">Yes</option>
+            <option value="N">No</option>
+        `;
+    }
+    if (freeFloatSelect) {
+        freeFloatSelect.innerHTML = '<option value="all">All</option>';
+    }
+}
+
 async function selectMetric(metric) {
     console.log(`🔥 Selecting metric: ${metric}`);
     
@@ -415,43 +560,51 @@ async function selectMetric(metric) {
     currentMetric = metric;
     
     // Check if this metric has implemented functionality
-    const implementedMetrics = ['fs', 'non-fs', 'leads', 'lags', 'excessive-lags'];
+    const implementedMetrics = ['fs', 'non-fs', 'leads', 'lags', 'excessive-lags', 'open-ends', 'constraints'];
     
     if (implementedMetrics.includes(metric)) {
         // Load appropriate filter options based on metric
-        if (metric === 'fs') {
+        if (metric === 'open-ends' || metric === 'constraints') {
+            // Update filter labels for activity-based metrics
+            const relationshipLabel = document.querySelector('label[for="relationshipTypeFilter"]');
+            const drivingLabel = document.querySelector('label[for="drivingFilter"]');
+            const freeFloatContainer = document.querySelector('label[for="freeFloatFilter"]').parentElement;
+            
+            if (relationshipLabel) {
+                relationshipLabel.textContent = 'Activity Type:';
+            }
+            if (drivingLabel) {
+                drivingLabel.textContent = metric === 'constraints' ? 'Hard/Soft Constraint:' : 'Activity Status:';
+            }
+            if (freeFloatContainer) {
+                freeFloatContainer.style.display = 'none'; // Hide free float filter for activity-based metrics
+            }
+            
+            // For Open Ends and Constraints, we need Activity Type and Activity Status (or Hard/Soft Constraint) filters
+            if (metric === 'constraints') {
+                await Promise.all([
+                    loadActivityTypes(),
+                    loadHardSoftConstraints()
+                ]);
+            } else {
+                await Promise.all([
+                    loadActivityTypes(),
+                    loadActivityStatuses()
+                ]);
+            }
+        } else {
+            // For all other metrics (fs, non-fs, leads, lags, excessive-lags), use relationship-based filters
+            console.log(`🔄 Loading relationship-based filters for ${metric}`);
+            resetFilterLabels(); // Reset filter labels first
+            
             await Promise.all([
-                loadRelationshipTypes('fs'),
-                loadDrivingOptions('fs'),
-                loadFreeFloatOptions('fs')
-            ]);
-        } else if (metric === 'non-fs') {
-            await Promise.all([
-                loadRelationshipTypes('non-fs'),
-                loadDrivingOptions('non-fs'),
-                loadFreeFloatOptions('non-fs')
-            ]);
-        } else if (metric === 'leads') {
-            await Promise.all([
-                loadRelationshipTypes('leads'),
-                loadDrivingOptions('leads'),
-                loadFreeFloatOptions('leads')
-            ]);
-        } else if (metric === 'lags') {
-            await Promise.all([
-                loadRelationshipTypes('lags'),
-                loadDrivingOptions('lags'),
-                loadFreeFloatOptions('lags')
-            ]);
-        } else if (metric === 'excessive-lags') {
-            await Promise.all([
-                loadRelationshipTypes('excessive-lags'),
-                loadDrivingOptions('excessive-lags'),
-                loadFreeFloatOptions('excessive-lags')
+                loadRelationshipTypes(metric),
+                loadDrivingOptions(metric),
+                loadFreeFloatOptions(metric)
             ]);
         }
         
-        loadMetricData(metric);
+    loadMetricData(metric);
     } else {
         // Show "Work in Progress" for non-implemented metrics
         showWorkInProgress(metric);
@@ -583,7 +736,9 @@ function getKPIEndpoint(metric) {
         'lags': '/api/schedule/lags-kpi',
         'excessive-lags': '/api/schedule/excessive-lags-kpi',
         'fs': '/api/schedule/fs-kpi',
-        'non-fs': '/api/schedule/non-fs-kpi'
+        'non-fs': '/api/schedule/non-fs-kpi',
+        'open-ends': '/api/schedule/open-ends-kpi',
+        'constraints': '/api/schedule/constraints-kpi'
     };
     return endpoints[metric];
 }
@@ -594,7 +749,9 @@ function getChartEndpoint(metric) {
         'lags': '/api/schedule/lags-chart-data',
         'excessive-lags': '/api/schedule/excessive-lags-chart-data',
         'fs': '/api/schedule/fs-chart-data',
-        'non-fs': '/api/schedule/non-fs-chart-data'
+        'non-fs': '/api/schedule/non-fs-chart-data',
+        'open-ends': '/api/schedule/open-ends-chart-data',
+        'constraints': '/api/schedule/constraints-chart-data'
     };
     return endpoints[metric];
 }
@@ -605,7 +762,9 @@ function getHistoryEndpoint(metric) {
         'lags': '/api/schedule/lags-percentage-history',
         'excessive-lags': '/api/schedule/excessive-lags-line-chart',
         'fs': '/api/schedule/fs-line-chart',
-        'non-fs': '/api/schedule/non-fs-line-chart'
+        'non-fs': '/api/schedule/non-fs-line-chart',
+        'open-ends': '/api/schedule/open-ends-line-chart',
+        'constraints': '/api/schedule/constraints-line-chart'
     };
     
     return endpoints[metric] || endpoints['leads'];
@@ -617,7 +776,9 @@ function getTableEndpoint(metric) {
         'lags': '/api/schedule/lags',
         'excessive-lags': '/api/schedule/excessive-lags',
         'fs': '/api/schedule/fs',
-        'non-fs': '/api/schedule/non-fs'
+        'non-fs': '/api/schedule/non-fs',
+        'open-ends': '/api/schedule/open-ends',
+        'constraints': '/api/schedule/constraints'
     };
     return endpoints[metric];
 }
@@ -681,6 +842,18 @@ function getKPICards(data, metric) {
                 { title: 'Total Relationships', value: data.Total_Relationship_Count || 0 },
                 { title: 'Remaining Relationships', value: data.Remaining_Relationship_Count || 0 },
                 { title: 'Lags', value: data.Lag_Count || 0 }
+            ];
+        case 'open-ends':
+            return [
+                { title: 'Open End Count', value: data.OpenEnd_Count || 0 },
+                { title: 'Permissible Open Ends', value: data.KPIOpenEnds || 2 },
+                { title: 'Open Ends %', value: (data.OpenEnds_Percentage || 0).toFixed(2) + '%' }
+            ];
+        case 'constraints':
+            return [
+                { title: 'Constraint Count', value: data.CO_Count || 0 },
+                { title: 'Remaining Activities', value: data.Remaining_Activities || 0 },
+                { title: 'Constraints %', value: (data.Constraints_Percentage || 0).toFixed(2) + '%' }
             ];
         default:
             return [];
@@ -753,6 +926,16 @@ function createChart(ctx, data, metric) {
     // Special handling for leads, lags, and excessive-lags - stacked column chart
     if (metric === 'leads' || metric === 'lags' || metric === 'excessive-lags') {
         return createStackedColumnChart(ctx, data, metric);
+    }
+    
+    // Special handling for open-ends - donut chart for Activity Type distribution
+    if (metric === 'open-ends') {
+        return createOpenEndsChart(ctx, data, metric);
+    }
+    
+    // Special handling for constraints - donut chart for HardOrSoftConstraint and ActivityType
+    if (metric === 'constraints') {
+        return createConstraintsChart(ctx, data, metric);
     }
     
     // Default chart configuration for other metrics (fs, non-fs)
@@ -895,6 +1078,161 @@ function createStackedColumnChart(ctx, data, metric) {
             };
             config.data.datasets.push(dataset);
         });
+    }
+    
+    return new Chart(ctx, config);
+}
+
+function createOpenEndsChart(ctx, data, metric) {
+    const config = {
+        type: 'doughnut',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: [
+                    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+                    '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
+                ],
+                borderWidth: 2,
+                borderColor: '#ffffff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        fontSize: 12,
+                        padding: 10,
+                        usePointStyle: true
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
+                }
+            },
+            cutout: '60%'
+        }
+    };
+    
+    // Process open ends chart data (already aggregated by Activity Type)
+    if (Array.isArray(data) && data.length > 0) {
+        // Check if data is already aggregated (has ActivityType and count fields)
+        if (data[0] && (data[0].ActivityType || data[0].Activity_Type) && (data[0].count !== undefined)) {
+            // Data is already aggregated by backend
+            config.data.labels = data.map(item => item.ActivityType || item.Activity_Type || 'Unknown');
+            config.data.datasets[0].data = data.map(item => item.count || 0);
+        } else {
+            // Data needs to be grouped by Activity Type (for detailed records)
+            const activityTypeGroups = {};
+            data.forEach(item => {
+                const activityType = item.ActivityType || item.Activity_Type || 'Unknown';
+                activityTypeGroups[activityType] = (activityTypeGroups[activityType] || 0) + 1;
+            });
+            
+            config.data.labels = Object.keys(activityTypeGroups);
+            config.data.datasets[0].data = Object.values(activityTypeGroups);
+        }
+    } else if (data && typeof data === 'object') {
+        // Handle object-based data
+        const entries = Object.entries(data);
+        if (entries.length > 0) {
+            config.data.labels = entries.map(([key]) => key);
+            config.data.datasets[0].data = entries.map(([, value]) => value);
+        }
+    }
+    
+    return new Chart(ctx, config);
+}
+
+function createConstraintsChart(ctx, data, metric) {
+    const config = {
+        type: 'doughnut',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: [
+                    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
+                    '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#6366F1'
+                ],
+                borderWidth: 2,
+                borderColor: '#ffffff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        fontSize: 12,
+                        padding: 10,
+                        usePointStyle: true
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.raw || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
+                }
+            },
+            cutout: '60%'
+        }
+    };
+    
+    // Process constraints chart data
+    if (Array.isArray(data) && data.length > 0) {
+        // Check if data has HardOrSoftConstraint and ActivityType fields (aggregated backend data)
+        if (data[0].HardOrSoftConstraint !== undefined && data[0].ActivityType !== undefined) {
+            // Group by HardOrSoftConstraint and ActivityType combination
+            const constraintGroups = {};
+            data.forEach(item => {
+                const constraintType = item.HardOrSoftConstraint || 'Unknown';
+                const activityType = item.ActivityType || 'Unknown';
+                const key = `${constraintType} - ${activityType}`;
+                const count = item.count || 0;
+                constraintGroups[key] = (constraintGroups[key] || 0) + count;
+            });
+            
+            config.data.labels = Object.keys(constraintGroups);
+            config.data.datasets[0].data = Object.values(constraintGroups);
+        } else {
+            // Handle raw data - group by HardOrSoftConstraint
+            const constraintGroups = {};
+            data.forEach(item => {
+                const constraintType = item.HardOrSoftConstraint || item.Hard_Or_Soft_Constraint || 'Unknown';
+                constraintGroups[constraintType] = (constraintGroups[constraintType] || 0) + 1;
+            });
+            
+            config.data.labels = Object.keys(constraintGroups);
+            config.data.datasets[0].data = Object.values(constraintGroups);
+        }
+    } else if (data && typeof data === 'object') {
+        // Handle object-based data
+        const entries = Object.entries(data);
+        if (entries.length > 0) {
+            config.data.labels = entries.map(([key]) => key);
+            config.data.datasets[0].data = entries.map(([, value]) => value);
+        }
     }
     
     return new Chart(ctx, config);
@@ -1084,6 +1422,37 @@ function getTableConfig(metric) {
                 { field: 'Driving', title: 'Driving' },
                 { field: 'FreeFloat', title: 'Free Float' },
                 { field: 'Relationship_Status', title: 'Rel. Status' }
+            ]
+        },
+        'open-ends': {
+            columns: [
+                { field: 'ActivityID', title: 'Activity ID' },
+                { field: 'ActivityName', title: 'Activity Name' },
+                { field: 'StartDate', title: 'Start Date' },
+                { field: 'FinishDate', title: 'Finish Date' },
+                { field: 'OriginalDuration', title: 'Original Duration' },
+                { field: 'TotalFloatDays', title: 'Total Float Days' },
+                { field: 'MissingPredecessor', title: 'Missing Predecessor' },
+                { field: 'MissingSuccessor', title: 'Missing Successor' },
+                { field: 'PrimaryConstraint', title: 'Primary Constraint' },
+                { field: 'ActivityType', title: 'Activity Type' },
+                { field: 'ActivityStatus', title: 'Activity Status' }
+            ]
+        },
+        'constraints': {
+            columns: [
+                { field: 'ActivityID', title: 'Activity ID' },
+                { field: 'ActivityName', title: 'Activity Name' },
+                { field: 'StartDate', title: 'Start Date' },
+                { field: 'FinishDate', title: 'Finish Date' },
+                { field: 'OriginalDuration', title: 'Original Duration' },
+                { field: 'TotalFloatDays', title: 'Total Float Days' },
+                { field: 'PrimaryConstraint', title: 'Primary Constraint' },
+                { field: 'HardOrSoftConstraint', title: 'Hard/Soft Constraint' },
+                { field: 'ConstrainedStart', title: 'Constrained Start' },
+                { field: 'ConstrainedFinish', title: 'Constrained Finish' },
+                { field: 'ActivityType', title: 'Activity Type' },
+                { field: 'ActivityStatus', title: 'Activity Status' }
             ]
         }
     };
@@ -1421,6 +1790,37 @@ async function exportFullPageToImage() {
     } catch (error) {
         console.error('Error exporting full page to image:', error);
         showError('Failed to export page to image');
+    }
+} 
+
+async function loadHardSoftConstraints() {
+    try {
+        const queryParams = buildQueryParams();
+        const response = await fetch(`${API_BASE}/api/hard-soft-constraints${queryParams}`);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to load hard/soft constraints: ${response.status}`);
+        }
+        
+        const constraints = await response.json();
+        
+        const select = document.getElementById('drivingFilter');
+        if (select) {
+            // Clear existing options except 'All'
+            select.innerHTML = '<option value="all">All Constraint Types</option>';
+            
+            // Add constraint type options
+            constraints.forEach(constraint => {
+                const option = document.createElement('option');
+                option.value = constraint.name;
+                option.textContent = constraint.name;
+                select.appendChild(option);
+            });
+        }
+        
+        console.log('[Hard/Soft Constraints] Loaded:', constraints.length, 'constraint types');
+    } catch (error) {
+        console.error('[Hard/Soft Constraints] Error:', error);
     }
 }
 

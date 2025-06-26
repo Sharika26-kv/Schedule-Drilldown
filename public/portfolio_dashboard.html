@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portfolio Management - NIRMAN</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+      background-color: #f5f7fa;
+      color: #2d3748;
+      line-height: 1.6;
+    }
+
+    .app-container {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar Styles */
+    .sidebar {
+      width: 280px;
+      background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+      color: white;
+      padding: 20px 0;
+      box-shadow: 4px 0 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .logo-section {
+      padding: 0 20px 30px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+      text-decoration: none;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.8);
+      margin-top: 4px;
+    }
+
+    .nav-menu {
+      padding: 20px 0;
+    }
+
+    .nav-item {
+      padding: 12px 20px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border-left: 3px solid transparent;
+    }
+
+    .nav-item:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      border-left-color: rgba(255, 255, 255, 0.5);
+    }
+
+    .nav-item.active {
+      background-color: rgba(255, 255, 255, 0.15);
+      border-left-color: white;
+    }
+
+    .nav-item i {
+      width: 20px;
+      margin-right: 12px;
+    }
+
+    /* Main Content Styles */
+    .main-content {
+      flex: 1;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .header {
+      background: white;
+      padding: 20px 30px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1a365d;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      color: #718096;
+      font-size: 16px;
+    }
+
+    /* Project Filter Section */
+    .project-filter-section {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      margin-bottom: 20px;
+    }
+
+    .filter-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .filter-group label {
+      font-weight: 600;
+      color: #2d3748;
+      font-size: 14px;
+    }
+
+    .filter-select {
+      padding: 8px 12px;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      font-size: 14px;
+      min-width: 200px;
+      transition: border-color 0.2s ease;
+    }
+
+    .filter-select:focus {
+      outline: none;
+      border-color: #2563eb;
+    }
+
+    /* Metrics Selection Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin: 20px 0;
+    }
+
+    .metric-card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: 2px solid transparent;
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    .metric-card.selected {
+      border-color: #2563eb;
+      background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    }
+
+    .metric-card h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #1a365d;
+      margin-bottom: 8px;
+    }
+
+    .metric-card p {
+      color: #718096;
+      font-size: 14px;
+    }
+
+    /* Dashboard Content */
+    .dashboard-content {
+      display: none;
+    }
+
+    .dashboard-content.active {
+      display: block;
+    }
+
+    .dashboard-section {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      margin-bottom: 20px;
+      overflow: hidden;
+    }
+
+    .section-header {
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      padding: 20px 30px;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .section-header h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1a365d;
+    }
+
+    .export-buttons {
+      display: flex;
+      gap: 8px;
+    }
+
+    .export-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: white;
+      border: 2px solid #e2e8f0;
+      border-radius: 8px;
+      color: #4a5568;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .export-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .export-btn.pdf:hover {
+      border-color: #dc2626;
+      color: #dc2626;
+    }
+
+    .export-btn.excel:hover {
+      border-color: #059669;
+      color: #059669;
+    }
+
+    .export-btn.image:hover {
+      border-color: #7c3aed;
+      color: #7c3aed;
+    }
+
+    /* KPI Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      padding: 30px;
+    }
+
+    .kpi-card {
+      text-align: center;
+      padding: 20px;
+      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+    }
+
+    .kpi-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: #2563eb;
+      margin-bottom: 8px;
+    }
+
+    .kpi-label {
+      font-size: 14px;
+      color: #64748b;
+      font-weight: 500;
+    }
+
+    /* Charts and Tables */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      padding: 30px;
+    }
+
+    .chart-container {
+      background: #fafafa;
+      border-radius: 8px;
+      padding: 20px;
+      height: 300px;
+    }
+
+    .table-container {
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .data-table th {
+      background: #f8fafc;
+      padding: 12px;
+      text-align: left;
+      font-weight: 600;
+      color: #374151;
+      border-bottom: 1px solid #e2e8f0;
+      position: sticky;
+      top: 0;
+    }
+
+    .data-table td {
+      padding: 12px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .data-table tr:hover {
+      background: #f8fafc;
+    }
+
+    /* Welcome Message */
+    .welcome-message {
+      text-align: center;
+      padding: 60px 20px;
+      color: #64748b;
+    }
+
+    .welcome-message h2 {
+      font-size: 24px;
+      margin-bottom: 12px;
+      color: #334155;
+    }
+
+    .welcome-message p {
+      font-size: 16px;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    /* Loading states */
+    .loading {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 200px;
+      color: #64748b;
+    }
+
+    .spinner {
+      border: 3px solid #f3f4f6;
+      border-top: 3px solid #2563eb;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin-right: 12px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .app-container {
+        flex-direction: column;
+      }
+      
+      .sidebar {
+        width: 100%;
+        position: static;
+      }
+      
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+      
+      .filter-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="logo-section">
+        <a href="#" class="logo">NIRMAN</a>
+        <div class="subtitle">Portfolio Management</div>
+      </div>
+      
+      <nav class="nav-menu">
+        <div class="nav-item" onclick="showDashboard()">
+          <i>📊</i> Dashboard
+        </div>
+        <div class="nav-item" onclick="showProjects()">
+          <i>🏗️</i> Projects
+        </div>
+        <div class="nav-item active" onclick="showScheduleDrilldown()">
+          <i>📈</i> Schedule Drilldown
+        </div>
+        <div class="nav-item" onclick="showReports()">
+          <i>📋</i> Reports
+        </div>
+        <div class="nav-item" onclick="showSettings()">
+          <i>⚙️</i> Settings
+        </div>
+      </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="header">
+        <h1>Schedule Drilldown</h1>
+        <p>Analyze project schedules with detailed metrics and KPIs</p>
+      </div>
+
+      <!-- Project Filter Section -->
+      <div class="project-filter-section">
+        <div class="filter-row">
+          <div class="filter-group">
+            <label for="projectFilter">Select Project:</label>
+            <select id="projectFilter" class="filter-select">
+              <option value="">All Projects</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Selected Project:</label>
+            <span id="selectedProjectName" style="font-weight: 600; color: #2563eb;">All Projects</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Metrics Selection Grid -->
+      <div class="metrics-grid">
+        <div class="metric-card" onclick="selectMetric('leads')">
+          <h3>Leads Analysis</h3>
+          <p>Activity relationships and lead times</p>
+        </div>
+        <div class="metric-card" onclick="selectMetric('lags')">
+          <h3>Lags Analysis</h3>
+          <p>Activity delays and lag analysis</p>
+        </div>
+        <div class="metric-card" onclick="selectMetric('excessive-lags')">
+          <h3>Excessive Lags</h3>
+          <p>Critical delay identification</p>
+        </div>
+        <div class="metric-card" onclick="selectMetric('fs-zero')">
+          <h3>FS+0d Activities</h3>
+          <p>Finish-to-Start with zero lag</p>
+        </div>
+        <div class="metric-card" onclick="selectMetric('non-fs-zero')">
+          <h3>Non FS+0d Activities</h3>
+          <p>Alternative relationship types</p>
+        </div>
+      </div>
+
+      <!-- Welcome Message -->
+      <div id="welcomeMessage" class="welcome-message">
+        <h2>Welcome to Schedule Drilldown</h2>
+        <p>Select a project from the dropdown above and choose a metric to begin your analysis. Detailed KPIs, charts, and data tables will be displayed here.</p>
+      </div>
+
+      <!-- Leads Dashboard -->
+      <div id="leadsDashboard" class="dashboard-content">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <h2>Leads Analysis - Key Performance Indicators</h2>
+            <div class="export-buttons">
+              <button class="export-btn pdf" onclick="exportToPDF('leadsDashboard')">
+                <span>📄</span> PDF
+              </button>
+              <button class="export-btn excel" onclick="exportToExcel('leads')">
+                <span>📊</span> Excel
+              </button>
+              <button class="export-btn image" onclick="exportToImage('leadsDashboard')">
+                <span>🖼️</span> Image
+              </button>
+            </div>
+          </div>
+          
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-value" id="leadsTotal">-</div>
+              <div class="kpi-label">Total Activities</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="leadsCritical">-</div>
+              <div class="kpi-label">Critical Activities</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="leadsAvgFloat">-</div>
+              <div class="kpi-label">Avg Float Days</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="leadsDriving">-</div>
+              <div class="kpi-label">Driving Activities</div>
+            </div>
+          </div>
+
+          <div class="content-grid">
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">Relationship Types Distribution</h3>
+              <div class="chart-container">
+                <canvas id="leadsChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">Activities Data</h3>
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Activity ID</th>
+                      <th>Activity Name</th>
+                      <th>Relationship Type</th>
+                      <th>Float Days</th>
+                      <th>Driving</th>
+                    </tr>
+                  </thead>
+                  <tbody id="leadsTableBody">
+                    <tr><td colspan="5" class="loading"><div class="spinner"></div>Loading data...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lags Dashboard -->
+      <div id="lagsDashboard" class="dashboard-content">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <h2>Lags Analysis - Key Performance Indicators</h2>
+            <div class="export-buttons">
+              <button class="export-btn pdf" onclick="exportToPDF('lagsDashboard')">
+                <span>📄</span> PDF
+              </button>
+              <button class="export-btn excel" onclick="exportToExcel('lags')">
+                <span>📊</span> Excel
+              </button>
+              <button class="export-btn image" onclick="exportToImage('lagsDashboard')">
+                <span>🖼️</span> Image
+              </button>
+            </div>
+          </div>
+          
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-value" id="lagsTotal">-</div>
+              <div class="kpi-label">Total Lags</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="lagsPositive">-</div>
+              <div class="kpi-label">Positive Lags</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="lagsAvg">-</div>
+              <div class="kpi-label">Avg Lag Days</div>
+            </div>
+          </div>
+          
+          <div class="content-grid">
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">Lag Distribution</h3>
+              <div class="chart-container">
+                <canvas id="lagsChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">Sample Data</h3>
+              <div class="table-container">
+                <div class="loading"><div class="spinner"></div>Loading lag analysis...</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FS+0d Dashboard -->
+      <div id="fsZeroDashboard" class="dashboard-content">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <h2>FS+0d Activities Analysis</h2>
+            <div class="export-buttons">
+              <button class="export-btn pdf" onclick="exportToPDF('fsZeroDashboard')">
+                <span>📄</span> PDF
+              </button>
+              <button class="export-btn excel" onclick="exportToExcel('fs-zero')">
+                <span>📊</span> Excel
+              </button>
+              <button class="export-btn image" onclick="exportToImage('fsZeroDashboard')">
+                <span>🖼️</span> Image
+              </button>
+            </div>
+          </div>
+          
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-value" id="fsZeroTotal">-</div>
+              <div class="kpi-label">Total Relationships</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="fsZeroCount">-</div>
+              <div class="kpi-label">FS+0d Activities</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="fsZeroLags">-</div>
+              <div class="kpi-label">Lags</div>
+            </div>
+          </div>
+          
+          <div class="content-grid">
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">Activity Type Distribution</h3>
+              <div class="chart-container">
+                <canvas id="fsZeroChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">FS+0d Activities Data</h3>
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Pred. ID</th>
+                      <th>Succ. ID</th>
+                      <th>Pred. Name</th>
+                      <th>Succ. Name</th>
+                      <th>Relationship Type</th>
+                      <th>Lag</th>
+                      <th>Driving</th>
+                      <th>Free Float</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fsZeroTableBody">
+                    <tr><td colspan="8" class="loading"><div class="spinner"></div>Loading data...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Non-FS+0d Dashboard -->
+      <div id="non-fs-zeroDashboard" class="dashboard-content">
+        <div class="dashboard-section">
+          <div class="section-header">
+            <h2>Non-FS+0d Activities Analysis</h2>
+            <div class="export-buttons">
+              <button class="export-btn pdf" onclick="exportToPDF('non-fs-zeroDashboard')">
+                <span>📄</span> PDF
+              </button>
+              <button class="export-btn excel" onclick="exportToExcel('non-fs-zero')">
+                <span>📊</span> Excel
+              </button>
+              <button class="export-btn image" onclick="exportToImage('non-fs-zeroDashboard')">
+                <span>🖼️</span> Image
+              </button>
+            </div>
+          </div>
+          
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-value" id="nonFsZeroTotal">-</div>
+              <div class="kpi-label">Total Relationships</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="nonFsZeroCount">-</div>
+              <div class="kpi-label">Non-FS+0d Activities</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-value" id="nonFsZeroLags">-</div>
+              <div class="kpi-label">Lags</div>
+            </div>
+          </div>
+          
+          <div class="content-grid">
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">Activity Type Distribution</h3>
+              <div class="chart-container">
+                <canvas id="nonFsZeroChart"></canvas>
+              </div>
+            </div>
+            <div>
+              <h3 style="margin-bottom: 15px; color: #374151;">Non-FS+0d Activities Data</h3>
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Pred. ID</th>
+                      <th>Succ. ID</th>
+                      <th>Pred. Name</th>
+                      <th>Succ. Name</th>
+                      <th>Relationship Type</th>
+                      <th>Lag</th>
+                      <th>Driving</th>
+                      <th>Free Float</th>
+                    </tr>
+                  </thead>
+                  <tbody id="nonFsZeroTableBody">
+                    <tr><td colspan="8" class="loading"><div class="spinner"></div>Loading data...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentProject = '';
+    let charts = {};
+
+    // Load project options on page load
+    window.addEventListener('DOMContentLoaded', loadProjectOptions);
+
+    async function loadProjectOptions() {
+      try {
+        const response = await fetch('/api/project-options');
+        const projects = await response.json();
+        
+        const select = document.getElementById('projectFilter');
+        select.innerHTML = '<option value="">All Projects</option>';
+        
+        projects.forEach(project => {
+          const option = document.createElement('option');
+          option.value = project.id;
+          option.textContent = project.name;
+          select.appendChild(option);
+        });
+        
+        select.addEventListener('change', onProjectChange);
+      } catch (error) {
+        console.error('Error loading project options:', error);
+      }
+    }
+
+    function onProjectChange() {
+      const select = document.getElementById('projectFilter');
+      currentProject = select.value;
+      
+      const selectedName = select.options[select.selectedIndex].text;
+      document.getElementById('selectedProjectName').textContent = selectedName;
+      
+      // Refresh current metric if one is selected
+      const activeCard = document.querySelector('.metric-card.selected');
+      if (activeCard) {
+        const metric = activeCard.onclick.toString().match(/selectMetric\('(.+)'\)/)[1];
+        selectMetric(metric);
+      }
+    }
+
+    function selectMetric(metric) {
+      // Update card selection
+      document.querySelectorAll('.metric-card').forEach(card => card.classList.remove('selected'));
+      event.target.closest('.metric-card').classList.add('selected');
+      
+      // Hide welcome message and all dashboards
+      document.getElementById('welcomeMessage').style.display = 'none';
+      document.querySelectorAll('.dashboard-content').forEach(content => content.classList.remove('active'));
+      
+      // Show selected dashboard
+      const dashboardId = metric + 'Dashboard';
+      const dashboard = document.getElementById(dashboardId);
+      if (dashboard) {
+        dashboard.classList.add('active');
+        loadMetricData(metric);
+      }
+    }
+
+    async function loadMetricData(metric) {
+      const projectParam = currentProject ? `?project_id=${currentProject}` : '';
+      
+      try {
+        switch(metric) {
+          case 'leads':
+            await loadLeadsData(projectParam);
+            break;
+          case 'lags':
+            await loadLagsData(projectParam);
+            break;
+          case 'fs-zero':
+            await loadFSZeroData(projectParam);
+            break;
+          case 'non-fs-zero':
+            await loadNonFSZeroData(projectParam);
+            break;
+          default:
+            console.log(`Loading ${metric} data...`);
+        }
+      } catch (error) {
+        console.error(`Error loading ${metric} data:`, error);
+      }
+    }
+
+    async function loadLeadsData(projectParam) {
+      try {
+        // Load KPI data
+        const kpiResponse = await fetch(`/api/leads-kpi${projectParam}`);
+        const kpiData = await kpiResponse.json();
+        
+        document.getElementById('leadsTotal').textContent = kpiData.total_activities || 0;
+        document.getElementById('leadsCritical').textContent = kpiData.critical_activities || 0;
+        document.getElementById('leadsAvgFloat').textContent = kpiData.avg_float_days || 0;
+        document.getElementById('leadsDriving').textContent = kpiData.driving_activities || 0;
+        
+        // Load chart data
+        const chartResponse = await fetch(`/api/leads-chart-data${projectParam}`);
+        const chartData = await chartResponse.json();
+        
+        createChart('leadsChart', chartData, 'Relationship Types');
+        
+        // Load table data
+        const tableResponse = await fetch(`/api/leads${projectParam}`);
+        const tableData = await tableResponse.json();
+        
+        populateTable('leadsTableBody', tableData, [
+          'Activity_ID', 'Activity_Name', 'Relationship_Type', 'Total_Float_Days', 'Driving_YN'
+        ]);
+        
+      } catch (error) {
+        console.error('Error loading leads data:', error);
+      }
+    }
+
+    async function loadLagsData(projectParam) {
+      try {
+        const kpiResponse = await fetch(`/api/lags-kpi${projectParam}`);
+        const kpiData = await kpiResponse.json();
+        
+        document.getElementById('lagsTotal').textContent = kpiData.total_lags || 0;
+        document.getElementById('lagsPositive').textContent = kpiData.positive_lags || 0;
+        document.getElementById('lagsAvg').textContent = kpiData.avg_lag_days || 0;
+        
+      } catch (error) {
+        console.error('Error loading lags data:', error);
+      }
+    }
+
+    async function loadFSZeroData(projectParam) {
+      try {
+        // Load KPI data using the existing backend API
+        const kpiResponse = await fetch(`/api/schedule/fs-kpi${projectParam}`);
+        const kpiData = await kpiResponse.json();
+        
+        document.getElementById('fsZeroTotal').textContent = kpiData.Total_Relationship_Count || 0;
+        document.getElementById('fsZeroCount').textContent = kpiData.FS_Count || 0;
+        document.getElementById('fsZeroLags').textContent = kpiData.Lag_Count || 0;
+        
+        // Load chart data
+        const chartResponse = await fetch(`/api/schedule/fs-chart-data${projectParam}`);
+        const chartData = await chartResponse.json();
+        
+        // Transform data for chart
+        const transformedChartData = {
+          labels: chartData.map(item => item.label),
+          data: chartData.map(item => item.value)
+        };
+        
+        createChart('fsZeroChart', transformedChartData, 'FS+0d Activities Distribution');
+        
+        // Load table data
+        const tableResponse = await fetch(`/api/schedule/fs${projectParam}`);
+        const tableData = await tableResponse.json();
+        
+        populateTable('fsZeroTableBody', tableData, [
+          'Pred. ID', 'Succ. ID', 'Pred. Name', 'Succ. Name', 'Relationship type', 'Lag', 'Driving', 'FreeFloat'
+        ]);
+        
+      } catch (error) {
+        console.error('Error loading FS+0d data:', error);
+      }
+    }
+
+    async function loadNonFSZeroData(projectParam) {
+      try {
+        // Load KPI data using the existing backend API
+        const kpiResponse = await fetch(`/api/schedule/non-fs-kpi${projectParam}`);
+        const kpiData = await kpiResponse.json();
+        
+        document.getElementById('nonFsZeroTotal').textContent = kpiData.Total_Relationship_Count || 0;
+        document.getElementById('nonFsZeroCount').textContent = kpiData.NonFS_Count || 0;
+        document.getElementById('nonFsZeroLags').textContent = kpiData.Lag_Count || 0;
+        
+        // Load chart data
+        const chartResponse = await fetch(`/api/schedule/non-fs-chart-data${projectParam}`);
+        const chartData = await chartResponse.json();
+        
+        // Transform data for chart
+        const transformedChartData = {
+          labels: chartData.map(item => item.label),
+          data: chartData.map(item => item.value)
+        };
+        
+        createChart('nonFsZeroChart', transformedChartData, 'Non-FS+0d Activities Distribution');
+        
+        // Load table data
+        const tableResponse = await fetch(`/api/schedule/non-fs${projectParam}`);
+        const tableData = await tableResponse.json();
+        
+        populateTable('nonFsZeroTableBody', tableData, [
+          'Pred. ID', 'Succ. ID', 'Pred. Name', 'Succ. Name', 'Relationship type', 'Lag', 'Driving', 'FreeFloat'
+        ]);
+        
+      } catch (error) {
+        console.error('Error loading Non-FS+0d data:', error);
+      }
+    }
+
+    function createChart(canvasId, data, title) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      
+      // Destroy existing chart if it exists
+      if (charts[canvasId]) {
+        charts[canvasId].destroy();
+      }
+      
+      charts[canvasId] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: data.labels || [],
+          datasets: [{
+            data: data.data || [],
+            backgroundColor: [
+              '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'
+            ],
+            borderWidth: 2,
+            borderColor: '#ffffff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                padding: 20,
+                usePointStyle: true
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function populateTable(tableBodyId, data, columns) {
+      const tbody = document.getElementById(tableBodyId);
+      tbody.innerHTML = '';
+      
+      if (!data || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="' + columns.length + '" style="text-align: center; color: #64748b;">No data available</td></tr>';
+        return;
+      }
+      
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        columns.forEach(col => {
+          const td = document.createElement('td');
+          td.textContent = row[col] || '-';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Export functions
+    function exportToPDF(sectionId) {
+      window.print();
+    }
+
+    function exportToExcel(metric) {
+      console.log(`Exporting ${metric} to Excel...`);
+      // Implementation would go here
+    }
+
+    function exportToImage(sectionId) {
+      const element = document.getElementById(sectionId);
+      html2canvas(element).then(canvas => {
+        const link = document.createElement('a');
+        link.download = `${sectionId}_export.png`;
+        link.href = canvas.toDataURL();
+        link.click();
+      });
+    }
+
+    // Navigation functions
+    function showDashboard() {
+      alert('Dashboard functionality will be implemented');
+    }
+
+    function showProjects() {
+      alert('Projects functionality will be implemented');
+    }
+
+    function showScheduleDrilldown() {
+      // Already on this page
+    }
+
+    function showReports() {
+      alert('Reports functionality will be implemented');
+    }
+
+    function showSettings() {
+      alert('Settings functionality will be implemented');
+    }
+  </script>
+</body>
+</html> 
